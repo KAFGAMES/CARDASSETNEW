@@ -81,7 +81,10 @@ To learn more about React Native, take a look at the following resources:
 -------------------------------------------------------------------------------------
 git init
 
-git remote add origin https://github.com/KAFGAMES/MyCardAsset-APP.git
+git remote add origin https://github.com/KAFGAMES/CARDASSETNEW.git
+
+git remote -v
+git remote set-url origin https://github.com/KAFGAMES/CARDASSETNEW.git
 
 git branch -m main
 git add .
