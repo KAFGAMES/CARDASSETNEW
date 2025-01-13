@@ -77,3 +77,79 @@ To learn more about React Native, take a look at the following resources:
 - [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
 - [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
 - [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+
+-------------------------------------------------------------------------------------
+git init
+
+git remote add origin https://github.com/KAFGAMES/MyCardAsset-APP.git
+
+git branch -m main
+git add .
+git commit -m "バグ修正"
+git commit -m "Initial commit"
+
+git push -u origin main
+
+
+・・・・・・・・・・
+cd ..
+
+git add .
+
+git commit -m "バグ修正"
+
+git push
+
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+git reset --hard
+
+git pull
+
+SHOW DATABASES;
+mysql -u root -p
+USE user_6;
+
+\\\\
+cd web-app
+node server.js
+
+----------------------------
+cd android
+gradlew clean
+gradlew assembleDebug
+cd ..
+rd /s /q node_modules
+npm install
+-----------------------------------------------
+adb kill-server
+adb start-server
+adb devices
+
+----------------------------------------------
+(読み込まないならデバイスの再起動)
+npx react-native start
+npx react-native start --port 8082
+npm install react-native-sqlite-storage
+npx react-native start --reset-cache
+
+別ターミナルで
+rd /s /q "C:\MyCardAssets-APP\CARDASSET_NEW\android\.gradle"
+
+cd android
+npx react-native run-android
+-----------------------------------------------
+git reset --hard
+
+cd ..
+npx react-native bundle \
+  --platform android \
+  --dev false \
+  --entry-file index.js \
+  --bundle-output android/app/src/main/assets/index.android.bundle \
+  --assets-dest android/app/src/main/res
+
+cd android
+gradlew assembleDebug
+出力されたAPKファイルを確認:
+
+出力場所: android/app/build/outputs/apk/debug/app-debug.apk
