@@ -1,34 +1,31 @@
-/**
- * App.tsx
- * タブ切り替えで「Dashboard」と「MyCard」を行き来できるようにする
- */
+////////////////////////////////////////////////////////////////////////////////
+// App.tsx
+////////////////////////////////////////////////////////////////////////////////
 import React from 'react';
-import {NavigationContainer} from '@react-navigation/native';
-import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
+import { NavigationContainer } from '@react-navigation/native';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
-// 先ほど作成した画面コンポーネントをインポート
-import DashboardScreen from './Screens/DashboardScreen';
-import MyCardScreen from './Screens/MyCardScreen';
+// 各画面をインポート
+import DashboardScreen from './src/screens/DashboardScreen';
+import MyAssetScreen from './src/screens/MyAssetScreen';
 
 const Tab = createBottomTabNavigator();
 
-function App(): React.JSX.Element {
+export default function App() {
   return (
     <NavigationContainer>
       <Tab.Navigator>
         <Tab.Screen
           name="Dashboard"
           component={DashboardScreen}
-          options={{title: 'ダッシュボード'}}
+          options={{ title: 'ダッシュボード' }}
         />
         <Tab.Screen
-          name="MyCard"
-          component={MyCardScreen}
-          options={{title: 'マイカード'}}
+          name="MyAsset"
+          component={MyAssetScreen}
+          options={{ title: 'マイ資産' }}
         />
       </Tab.Navigator>
     </NavigationContainer>
   );
 }
-
-export default App;
