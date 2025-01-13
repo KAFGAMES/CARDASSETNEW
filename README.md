@@ -137,8 +137,12 @@ npx react-native start --reset-cache
 
 別ターミナルで
 rd /s /q "C:\MyCardAssets-APP\CARDASSET_NEW\android\.gradle"
+rd /s /q node_modules
+rd /s /q android\build
+npm install
 
 cd android
+gradlew clean
 npx react-native run-android
 -----------------------------------------------
 git reset --hard
