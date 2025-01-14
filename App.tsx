@@ -23,7 +23,7 @@ export default function App() {
         <Tab.Screen
           name="MyAsset"
           component={MyAssetScreen}
-          options={{ title: 'マイ資産' }}
+          options={{ title: '一般資産' }}
         />
       </Tab.Navigator>
     </NavigationContainer>

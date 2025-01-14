@@ -50,6 +50,7 @@ type Asset = {
 
 const categoryOptions = ['カード', '家具', 'PC備品', '不動産', '金融商品'];
 const conditionOptions = ['状態S', '状態A', '状態B', '状態C'];
+const sortOptions = ['新しい順', '古い順', '価格の安い順', '価格の高い順'];
 
 /**
  * 楽天市場APIを使用して商品名から相場(販売価格)を取得する関数。
@@ -88,18 +89,6 @@ function openSearchSitesByName(name: string) {
         Linking.openURL('https://auctions.yahoo.co.jp/search/search?p=' + encodeURIComponent(name));
       },
     },
-    //{
-    //  text: '価格.com',
-     // onPress: () => {
-     //   Linking.openURL('https://kakaku.com/search_results/' + encodeURIComponent(name) + '/');
-     // },
-    //},
-    //{
-    //  text: 'Amazon',
-    // onPress: () => {
-    //    Linking.openURL('https://www.amazon.co.jp/s?k=' + encodeURIComponent(name));
-    //  },
-    //},
     { text: 'キャンセル', style: 'cancel' },
   ]);
 }
@@ -108,6 +97,10 @@ const MyAssetScreen = () => {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [searchText, setSearchText] = useState('');
   const isFocused = useIsFocused();
+
+  const [sortOption, setSortOption] = useState(sortOptions[0]);
+  const [filterCategory, setFilterCategory] = useState('');
+  const [filterCondition, setFilterCondition] = useState('');
 
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [newForm, setNewForm] = useState<Asset>({
@@ -195,7 +188,7 @@ const MyAssetScreen = () => {
       setNewForm(prev => ({
         ...prev,
         sale_price: result.sale_price,
-        buy_price: result.buy_price,
+        // 買取価格は変更しないため更新しない
       }));
       Alert.alert('取得成功', `販売価格:${result.sale_price} 円`);
     } catch (error) {
@@ -249,11 +242,11 @@ const MyAssetScreen = () => {
     try {
       setLoadingDetailPrice(true);
       const result = await fetchMarketPriceFromRakuten(detailForm.name);
-      setDetailForm(prev => (prev ? {
+      setDetailForm(prev => prev ? {
         ...prev,
         sale_price: result.sale_price,
-        buy_price: result.buy_price,
-      } : null));
+        // 買取価格は変更しないため更新しない
+      } : null);
       Alert.alert('取得成功', `販売価格:${result.sale_price} 円`);
     } catch (error) {
       console.log(error);
@@ -284,22 +277,81 @@ const MyAssetScreen = () => {
     ]);
   };
 
-  const sortedAssets = useMemo(() => [...assets].sort((a, b) => b.sale_price - a.sale_price), [assets]);
+  // ソート処理
+  const sortedAssets = useMemo(() => {
+    let sorted = [...assets];
+    switch(sortOption) {
+      case '新しい順':
+        sorted.sort((a, b) => new Date(b.purchase_date).getTime() - new Date(a.purchase_date).getTime());
+        break;
+      case '古い順':
+        sorted.sort((a, b) => new Date(a.purchase_date).getTime() - new Date(b.purchase_date).getTime());
+        break;
+      case '価格の安い順':
+        sorted.sort((a, b) => a.sale_price - b.sale_price);
+        break;
+      case '価格の高い順':
+        sorted.sort((a, b) => b.sale_price - a.sale_price);
+        break;
+      default:
+        break;
+    }
+    return sorted;
+  }, [assets, sortOption]);
+
+  // フィルタ処理（検索、カテゴリー、状態）
   const filteredAssets = useMemo(() => {
-    if (!searchText) return sortedAssets;
-    const lowerSearch = searchText.toLowerCase();
-    return sortedAssets.filter(({ name, category, condition }) =>
-      name.toLowerCase().includes(lowerSearch) ||
-      category.toLowerCase().includes(lowerSearch) ||
-      condition.toLowerCase().includes(lowerSearch)
-    );
-  }, [searchText, sortedAssets]);
+    return sortedAssets.filter(asset => {
+      const lowerSearch = searchText.toLowerCase();
+      const matchesSearch = 
+        asset.name.toLowerCase().includes(lowerSearch) ||
+        asset.category.toLowerCase().includes(lowerSearch) ||
+        asset.condition.toLowerCase().includes(lowerSearch);
+      const matchesCategory = filterCategory ? asset.category === filterCategory : true;
+      const matchesCondition = filterCondition ? asset.condition === filterCondition : true;
+      return matchesSearch && matchesCategory && matchesCondition;
+    });
+  }, [searchText, sortedAssets, filterCategory, filterCondition]);
+
   const highestSalePrice = filteredAssets.length ? filteredAssets[0].sale_price : 0;
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Text style={styles.title}>マイ資産一覧</Text>
-      <TextInput style={styles.searchInput} placeholder="名称・カテゴリ・状態を検索" value={searchText} onChangeText={setSearchText} />
+
+      {/* ソートとフィルタの選択UI */}
+      <View style={styles.filterRow}>
+        <Picker
+          style={styles.pickerSmall}
+          selectedValue={sortOption}
+          onValueChange={value => setSortOption(value)}
+        >
+          {sortOptions.map(opt => <Picker.Item label={opt} value={opt} key={opt} />)}
+        </Picker>
+        <Picker
+          style={styles.pickerSmall}
+          selectedValue={filterCategory}
+          onValueChange={value => setFilterCategory(value)}
+        >
+          <Picker.Item label="全てのカテゴリ" value="" />
+          {categoryOptions.map(opt => <Picker.Item label={opt} value={opt} key={opt} />)}
+        </Picker>
+        <Picker
+          style={styles.pickerSmall}
+          selectedValue={filterCondition}
+          onValueChange={value => setFilterCondition(value)}
+        >
+          <Picker.Item label="全ての状態" value="" />
+          {conditionOptions.map(opt => <Picker.Item label={opt} value={opt} key={opt} />)}
+        </Picker>
+      </View>
+
+      <TextInput
+        style={styles.searchInput}
+        placeholder="名称・カテゴリ・状態を検索"
+        value={searchText}
+        onChangeText={setSearchText}
+      />
       <TouchableOpacity style={styles.addButton} onPress={() => setAddModalVisible(true)}>
         <Text style={styles.addButtonText}>+ 新規登録</Text>
       </TouchableOpacity>
@@ -458,4 +510,6 @@ const styles = StyleSheet.create({
   divider: { height: 1, backgroundColor: '#CCC', marginVertical: 12 },
   subTitle: { fontSize: 16, fontWeight: '600', marginBottom: 8 },
   buttonRow: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 20 },
+  filterRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+  pickerSmall: { flex: 1, height: 50 },
 });
