@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////////////
-// src/screens/MyAssetScreen.tsx
+// src/screens/FinancialAssetScreen.tsx
 ////////////////////////////////////////////////////////////////////////////////
 import React, { useState, useEffect, useMemo } from 'react';
 import {
@@ -48,13 +48,10 @@ type Asset = {
   trade_profit: number;
 };
 
-const categoryOptions = ['トレーディングカード', '家具・電化製品', 'PC備品', '貴金属', '骨董品・直筆サイン', '不動産', 'その他'];
-const conditionOptions = ['状態S', '状態A', '状態B', '状態C'];
+const categoryOptions = ['株', '仮想通貨', '債券', '投資信託', 'その他'];
+const conditionOptions = ['未設定'];
 const sortOptions = ['新しい順', '古い順', '価格の安い順', '価格の高い順'];
 
-/**
- * 楽天市場APIを使用して商品名から相場(販売価格)を取得する関数。
- */
 async function fetchMarketPriceFromRakuten(name: string) {
   if (!name) throw new Error('商品名が空です');
   const appId = RAKUTEN_APP_ID;
@@ -93,7 +90,7 @@ function openSearchSitesByName(name: string) {
   ]);
 }
 
-const MyAssetScreen = () => {
+const FinancialAssetScreen = () => {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [searchText, setSearchText] = useState('');
   const isFocused = useIsFocused();
@@ -104,10 +101,10 @@ const MyAssetScreen = () => {
 
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [newForm, setNewForm] = useState<Asset>({
-    product_id: '1', // 実物資産として分類
+    product_id: '2', // 金融資産として分類
     name: '',
     category: categoryOptions[0],
-    condition: conditionOptions[1],
+    condition: conditionOptions[0],
     sale_price: 0,
     buy_price: 0,
     purchase_date: '',
@@ -132,7 +129,7 @@ const MyAssetScreen = () => {
   const fetchData = async () => {
     try {
       const data = await getAllAssets();
-      setAssets(data.filter(asset => asset.product_id === '1')); // 実物資産のみ表示
+      setAssets(data.filter(asset => asset.product_id === '2')); // 金融資産のみ表示
     } catch (error) {
       console.log(error);
     }
@@ -157,10 +154,10 @@ const MyAssetScreen = () => {
       Alert.alert('エラー', '登録に失敗しました。');
     } finally {
       setNewForm({
-        product_id: '1', // 実物資産として分類
+        product_id: '2', // 金融資産として分類
         name: '',
         category: categoryOptions[0],
-        condition: conditionOptions[1],
+        condition: conditionOptions[0],
         sale_price: 0,
         buy_price: 0,
         purchase_date: '',
@@ -315,7 +312,7 @@ const MyAssetScreen = () => {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <Text style={styles.title}>実物資産一覧</Text>
+      <Text style={styles.title}>金融資産一覧</Text>
 
       {/* ソートとフィルタの選択UI */}
       <View style={styles.filterRow}>
@@ -386,13 +383,14 @@ const MyAssetScreen = () => {
         <ScrollView style={styles.modalContainer}>
           <Text style={styles.modalTitle}>新規資産を登録</Text>
           <TextInput style={styles.modalInput} placeholder="商品IDは自動設定" editable={false} value={newForm.product_id} />
-          <TextInput style={styles.modalInput} placeholder="名称 (例: レアカード)" value={newForm.name} onChangeText={text => handleNewFormChange('name', text)} />
+          <TextInput style={styles.modalInput} placeholder="名称 (例: 銘柄名)" value={newForm.name} onChangeText={text => handleNewFormChange('name', text)} />
           <Text style={styles.label}>カテゴリー</Text>
           <View style={styles.pickerWrapper}>
             <Picker selectedValue={newForm.category} onValueChange={value => handleNewFormChange('category', value)}>
               {categoryOptions.map(opt => <Picker.Item label={opt} value={opt} key={opt} />)}
             </Picker>
           </View>
+          {/* 金融資産では状態の選択肢は固定 */}
           <Text style={styles.label}>状態</Text>
           <View style={styles.pickerWrapper}>
             <Picker selectedValue={newForm.condition} onValueChange={value => handleNewFormChange('condition', value)}>
@@ -435,6 +433,7 @@ const MyAssetScreen = () => {
                 {categoryOptions.map(opt => <Picker.Item label={opt} value={opt} key={opt} />)}
               </Picker>
             </View>
+            {/* 金融資産では状態固定 */}
             <Text style={styles.label}>状態</Text>
             <View style={styles.pickerWrapper}>
               <Picker selectedValue={detailForm.condition} onValueChange={v => handleDetailFormChange('condition', v)}>
@@ -482,7 +481,7 @@ const MyAssetScreen = () => {
   );
 };
 
-export default MyAssetScreen;
+export default FinancialAssetScreen;
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F7F7F7', padding: 16 },

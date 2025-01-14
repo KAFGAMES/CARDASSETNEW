@@ -7,7 +7,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
 // 各画面をインポート
 import DashboardScreen from './src/screens/DashboardScreen';
-import MyAssetScreen from './src/screens/MyAssetScreen';
+import AssetNavigator from './src/screens/AssetNavigator';
 
 const Tab = createBottomTabNavigator();
 
@@ -21,9 +21,9 @@ export default function App() {
           options={{ title: 'ダッシュボード' }}
         />
         <Tab.Screen
-          name="MyAsset"
-          component={MyAssetScreen}
-          options={{ title: '一般資産' }}
+          name="Asset"
+          component={AssetNavigator}
+          options={{ title: '資産' }}
         />
       </Tab.Navigator>
     </NavigationContainer>
