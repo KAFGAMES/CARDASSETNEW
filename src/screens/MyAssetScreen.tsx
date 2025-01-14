@@ -15,9 +15,10 @@ import {
   Modal,
   Button,
   ScrollView,
+  ActivityIndicator, // ローディングインジケータ
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
-import { useIsFocused } from '@react-navigation/native'; // ← 追加
+import { useIsFocused } from '@react-navigation/native';
 import {
   initDB,
   getAllAssets,
@@ -27,14 +28,14 @@ import {
 } from '../database/Database';
 
 type Asset = {
-  id?: number;             // 内部ID（ユーザーには非表示）
-  product_id: string;      // 商品ID
-  name: string;            // 名称
-  category: string;        // カテゴリー
-  condition: string;       // 状態
-  sale_price: number;      // 販売価格
-  buy_price: number;       // 買取価格
-  purchase_date: string;   // 購入日
+  id?: number; // 内部ID（ユーザーには非表示）
+  product_id: string;  // 商品ID
+  name: string;        // 名称
+  category: string;    // カテゴリー
+  condition: string;   // 状態
+  sale_price: number;  // 販売価格
+  buy_price: number;   // 買取価格
+  purchase_date: string;  
   selling_date: string;    // 売却日 (詳細のみ)
   quantity: number;        // 所持枚数
   estimated_flag: number;  // 査定済みフラグ (詳細のみ)
@@ -45,20 +46,45 @@ type Asset = {
   trade_profit: number;    // 売買利益(詳細のみ)
 };
 
-/** カテゴリ選択肢 */
 const categoryOptions = ['カード', '家具', 'PC備品', '不動産', '金融商品'];
-/** 状態選択肢 */
 const conditionOptions = ['状態S', '状態A', '状態B', '状態C'];
+
+/**
+ * 商品名を元に相場(販売価格,買取価格)を取得するダミー関数。
+ * 
+ * 実際には下記のような流れになります:
+ *   - fetch('https://example.com/api/getPrice?keyword=xxx')
+ *   - レスポンスをJSON化
+ *   - そこから sale_price, buy_price を取り出す
+ */
+async function fetchMarketPriceByName(name: string) {
+  if (!name) {
+    throw new Error('商品名が空です');
+  }
+  
+  // ★ダミー実装★
+  // 例えば実際には下記のような形：
+  // const response = await fetch(`https://example.com/api/price?keyword=${encodeURIComponent(name)}`);
+  // const json = await response.json();
+  // return { sale_price: json.sale, buy_price: json.buy };
+
+  // ここでは単に乱数で相場を返す例
+  return new Promise<{ sale_price: number; buy_price: number }>((resolve) => {
+    setTimeout(() => {
+      const randomSale = Math.floor(Math.random() * 5000) + 1000; // 1000~6000
+      const randomBuy = Math.floor(randomSale * 0.5);            // 買取は販売価格の半分くらい
+      resolve({ sale_price: randomSale, buy_price: randomBuy });
+    }, 1000); // 1秒後に返す
+  });
+}
 
 const MyAssetScreen = () => {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [searchText, setSearchText] = useState('');
-  const isFocused = useIsFocused(); // タブ切り替え等で再描画時に呼ばれる
+  const isFocused = useIsFocused();
 
-  // 新規登録用モーダル
+  // --- 新規登録モーダル ---
   const [addModalVisible, setAddModalVisible] = useState(false);
-
-  // 新規登録フォーム
   const [newForm, setNewForm] = useState<Asset>({
     product_id: '',
     name: '',
@@ -76,30 +102,25 @@ const MyAssetScreen = () => {
     sold_commission: 0,
     trade_profit: 0,
   });
+  const [loadingNewPrice, setLoadingNewPrice] = useState(false); // 相場取得中のローディング
 
-  // 詳細表示用モーダル & そのフォーム
+  // --- 詳細モーダル ---
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [detailForm, setDetailForm] = useState<Asset | null>(null);
+  const [loadingDetailPrice, setLoadingDetailPrice] = useState(false); // 相場取得中のローディング
 
-  /** 
-   * 画面初期化：DB初期化（1回だけ） 
-   */
+  // DB 初期化(1回) 
   useEffect(() => {
     initDB();
   }, []);
 
-  /**
-   * タブがフォーカスされる度にデータ取得
-   */
+  // フォーカス時にデータ取得
   useEffect(() => {
     if (isFocused) {
       fetchData();
     }
   }, [isFocused]);
 
-  /**
-   * DB から全アセット取得
-   */
   const fetchData = async () => {
     try {
       const data = await getAllAssets();
@@ -109,9 +130,9 @@ const MyAssetScreen = () => {
     }
   };
 
-  /**
-   * 新規登録フォームの入力ハンドラ
-   */
+  // ---------------------------------------------
+  // 新規登録フォーム操作
+  // ---------------------------------------------
   const handleNewFormChange = (key: keyof Asset, value: string | number) => {
     const numericFields: (keyof Asset)[] = ['sale_price','buy_price','quantity'];
     setNewForm(prev => ({
@@ -120,12 +141,8 @@ const MyAssetScreen = () => {
     }));
   };
 
-  /**
-   * 新規登録実行
-   */
   const handleAdd = async () => {
     try {
-      // 詳細項目は空のままでもOK
       await insertAsset(newForm);
       setAddModalVisible(false);
       fetchData();
@@ -152,20 +169,42 @@ const MyAssetScreen = () => {
         sold_commission: 0,
         trade_profit: 0,
       });
+      setLoadingNewPrice(false);
     }
   };
 
-  /**
-   * 詳細ボタン押下 → 詳細モーダルを表示 & フォーム設定
-   */
+  /** 新規登録モーダル → 商品名から相場取得 */
+  const handleFetchNewPrice = async () => {
+    if (!newForm.name) {
+      Alert.alert('エラー', '商品名を入力してください');
+      return;
+    }
+    try {
+      setLoadingNewPrice(true);
+      const result = await fetchMarketPriceByName(newForm.name);
+      // 取得結果をフォームに反映
+      setNewForm(prev => ({
+        ...prev,
+        sale_price: result.sale_price,
+        buy_price: result.buy_price,
+      }));
+      Alert.alert('取得成功', `販売価格:${result.sale_price} / 買取価格:${result.buy_price}`);
+    } catch (error) {
+      console.log(error);
+      Alert.alert('エラー', '相場の取得に失敗しました。');
+    } finally {
+      setLoadingNewPrice(false);
+    }
+  };
+
+  // ---------------------------------------------
+  // 詳細フォーム操作
+  // ---------------------------------------------
   const openDetail = (asset: Asset) => {
     setDetailForm({ ...asset });
     setDetailModalVisible(true);
   };
 
-  /**
-   * 詳細フォームの入力ハンドラ（編集したい場合）
-   */
   const handleDetailFormChange = (key: keyof Asset, value: string | number) => {
     if (!detailForm) return;
     const numericFields: (keyof Asset)[] = [
@@ -181,9 +220,6 @@ const MyAssetScreen = () => {
     });
   };
 
-  /**
-   * 詳細更新
-   */
   const handleUpdate = async () => {
     if (!detailForm?.id) return;
     try {
@@ -194,12 +230,37 @@ const MyAssetScreen = () => {
     } catch (error) {
       console.log(error);
       Alert.alert('エラー', '更新に失敗しました。');
+    } finally {
+      setLoadingDetailPrice(false);
     }
   };
 
-  /**
-   * 削除実行
-   */
+  /** 詳細モーダル → 商品名から相場取得 */
+  const handleFetchDetailPrice = async () => {
+    if (!detailForm?.name) {
+      Alert.alert('エラー', '商品名を入力してください');
+      return;
+    }
+    try {
+      setLoadingDetailPrice(true);
+      const result = await fetchMarketPriceByName(detailForm.name);
+      setDetailForm(prev => (prev ? {
+        ...prev,
+        sale_price: result.sale_price,
+        buy_price: result.buy_price,
+      } : null));
+      Alert.alert('取得成功', `販売価格:${result.sale_price} / 買取価格:${result.buy_price}`);
+    } catch (error) {
+      console.log(error);
+      Alert.alert('エラー', '相場の取得に失敗しました。');
+    } finally {
+      setLoadingDetailPrice(false);
+    }
+  };
+
+  // ---------------------------------------------
+  // 削除
+  // ---------------------------------------------
   const handleDelete = async (id?: number) => {
     if (!id) return;
     Alert.alert('削除確認', '本当に削除しますか？', [
@@ -221,12 +282,13 @@ const MyAssetScreen = () => {
     ]);
   };
 
-  // 価格の高い順にソート
+  // ---------------------------------------------
+  // ソート＆フィルター
+  // ---------------------------------------------
   const sortedAssets = useMemo(() => {
     return [...assets].sort((a, b) => b.sale_price - a.sale_price);
   }, [assets]);
 
-  // テキスト検索フィルター
   const filteredAssets = useMemo(() => {
     if (!searchText) return sortedAssets;
     const lowerSearch = searchText.toLowerCase();
@@ -239,7 +301,6 @@ const MyAssetScreen = () => {
     });
   }, [searchText, sortedAssets]);
 
-  // 一番高い販売価格
   const highestSalePrice = filteredAssets.length
     ? filteredAssets[0].sale_price
     : 0;
@@ -299,11 +360,6 @@ const MyAssetScreen = () => {
                 <Text style={styles.assetText}>
                   購入日: {item.purchase_date || '-'}
                 </Text>
-                {/* 
-                  ↓↓↓
-                  売却日／売却価格／売却手数料／売買利益／査定フラグは
-                  一覧には表示しない
-                */}
                 <Text style={styles.assetText}>
                   メモ: {item.memo || '-'}
                 </Text>
@@ -330,7 +386,9 @@ const MyAssetScreen = () => {
         }}
       />
 
-      {/* -------- 新規登録モーダル -------- */}
+      {/* ------------------------------------------------ */}
+      {/* 新規登録モーダル */}
+      {/* ------------------------------------------------ */}
       <Modal
         visible={addModalVisible}
         animationType="slide"
@@ -339,21 +397,20 @@ const MyAssetScreen = () => {
         <ScrollView style={styles.modalContainer}>
           <Text style={styles.modalTitle}>新規資産を登録</Text>
 
-          {/* 商品ID */}
           <TextInput
             style={styles.modalInput}
             placeholder="商品ID (例: CARD001)"
             value={newForm.product_id}
             onChangeText={text => handleNewFormChange('product_id', text)}
           />
-          {/* 名称 */}
+
           <TextInput
             style={styles.modalInput}
             placeholder="名称 (例: レアカード)"
             value={newForm.name}
             onChangeText={text => handleNewFormChange('name', text)}
           />
-          {/* カテゴリ */}
+
           <Text style={styles.label}>カテゴリー</Text>
           <View style={styles.pickerWrapper}>
             <Picker
@@ -365,7 +422,7 @@ const MyAssetScreen = () => {
               ))}
             </Picker>
           </View>
-          {/* 状態 */}
+
           <Text style={styles.label}>状態</Text>
           <View style={styles.pickerWrapper}>
             <Picker
@@ -377,7 +434,7 @@ const MyAssetScreen = () => {
               ))}
             </Picker>
           </View>
-          {/* 販売価格 */}
+
           <TextInput
             style={styles.modalInput}
             placeholder="販売価格 (数字)"
@@ -385,7 +442,7 @@ const MyAssetScreen = () => {
             value={String(newForm.sale_price || '')}
             onChangeText={text => handleNewFormChange('sale_price', text)}
           />
-          {/* 買取価格 */}
+
           <TextInput
             style={styles.modalInput}
             placeholder="買取価格 (数字)"
@@ -393,14 +450,14 @@ const MyAssetScreen = () => {
             value={String(newForm.buy_price || '')}
             onChangeText={text => handleNewFormChange('buy_price', text)}
           />
-          {/* 購入日 */}
+
           <TextInput
             style={styles.modalInput}
             placeholder="購入日 (例: 2025-01-01)"
             value={newForm.purchase_date}
             onChangeText={text => handleNewFormChange('purchase_date', text)}
           />
-          {/* 所持枚数 */}
+
           <TextInput
             style={styles.modalInput}
             placeholder="所持枚数 (数字)"
@@ -408,7 +465,7 @@ const MyAssetScreen = () => {
             value={String(newForm.quantity || '')}
             onChangeText={text => handleNewFormChange('quantity', text)}
           />
-          {/* メモ */}
+
           <TextInput
             style={styles.modalInput}
             placeholder="メモ (任意)"
@@ -416,7 +473,13 @@ const MyAssetScreen = () => {
             onChangeText={text => handleNewFormChange('memo', text)}
           />
 
-          <View style={styles.buttonRow}>
+          {/* 相場取得ボタン + ローディング表示 */}
+          <View style={styles.row}>
+            <Button title="相場を取得" onPress={handleFetchNewPrice} />
+            {loadingNewPrice && <ActivityIndicator style={{ marginLeft: 8 }} />}
+          </View>
+
+          <View style={[styles.buttonRow, { marginTop: 20 }]}>
             <Button title="登録" onPress={handleAdd} />
             <Button
               title="キャンセル"
@@ -427,7 +490,9 @@ const MyAssetScreen = () => {
         </ScrollView>
       </Modal>
 
-      {/* -------- 詳細モーダル -------- */}
+      {/* ------------------------------------------------ */}
+      {/* 詳細モーダル */}
+      {/* ------------------------------------------------ */}
       <Modal
         visible={detailModalVisible}
         animationType="slide"
@@ -437,13 +502,13 @@ const MyAssetScreen = () => {
           <ScrollView style={styles.modalContainer}>
             <Text style={styles.modalTitle}>詳細情報</Text>
 
-            {/* 例として、詳細内でも編集可能にしています（不要なら editable={false} などに） */}
             <Text style={styles.label}>商品ID</Text>
             <TextInput
               style={styles.modalInput}
               value={detailForm.product_id}
               onChangeText={v => handleDetailFormChange('product_id', v)}
             />
+
             <Text style={styles.label}>名称</Text>
             <TextInput
               style={styles.modalInput}
@@ -513,7 +578,7 @@ const MyAssetScreen = () => {
               onChangeText={v => handleDetailFormChange('memo', v)}
             />
 
-            {/* ここから先は一覧に表示しなかった詳細項目 */}
+            {/* 売却関連 */}
             <View style={styles.divider} />
             <Text style={styles.subTitle}>売却関連</Text>
 
@@ -564,7 +629,13 @@ const MyAssetScreen = () => {
               onChangeText={v => handleDetailFormChange('estimated_flag', v)}
             />
 
-            <View style={styles.buttonRow}>
+            {/* 相場取得ボタン + ローディング表示 */}
+            <View style={styles.row}>
+              <Button title="相場を取得" onPress={handleFetchDetailPrice} />
+              {loadingDetailPrice && <ActivityIndicator style={{ marginLeft: 8 }} />}
+            </View>
+
+            <View style={[styles.buttonRow, { marginTop: 20 }]}>
               <Button title="更新" onPress={handleUpdate} />
               <Button
                 title="閉じる"
@@ -699,9 +770,14 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 8,
   },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   buttonRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     marginBottom: 20,
   },
+  // ActivityIndicator はデフォルトスタイルのまま
 });
