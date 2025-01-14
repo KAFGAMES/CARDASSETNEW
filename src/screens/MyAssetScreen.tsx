@@ -357,11 +357,11 @@ const MyAssetScreen = () => {
         data={filteredAssets}
         keyExtractor={(_, index) => String(index)}
         renderItem={({ item }) => {
-          const isHighlight = item.sale_price === highestSalePrice && highestSalePrice > 0;
+          //const isHighlight = item.sale_price === highestSalePrice && highestSalePrice > 0;
           return (
-            <View style={[styles.assetItem, isHighlight && styles.highlightItem]}>
+            <View style={[styles.assetItem, styles.highlightItem]}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.assetName}>{item.name} (商品ID: {item.product_id})</Text>
+                <Text style={styles.assetName}>{item.name}</Text>
                 <Text style={styles.assetText}>カテゴリ: {item.category}</Text>
                 <Text style={styles.assetText}>状態: {item.condition}</Text>
                 <Text style={styles.assetText}>販売価格: {item.sale_price} 円</Text>
