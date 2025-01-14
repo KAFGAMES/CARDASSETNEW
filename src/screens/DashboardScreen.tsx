@@ -1,18 +1,15 @@
-////////////////////////////////////////////////////////////////////////////////
-// src/screens/DashboardScreen.tsx
-////////////////////////////////////////////////////////////////////////////////
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, Button, Alert, TextInput } from 'react-native';
-import { useIsFocused } from '@react-navigation/native';
-import { initDB, getAllAssets, insertMemo, getMemo } from '../database/Database';
+import { View, Text, StyleSheet, Button, Alert, TouchableOpacity } from 'react-native';
+import { useIsFocused, useNavigation } from '@react-navigation/native';
+import { initDB, getAllAssets, getMemo } from '../database/Database';
 import { Calendar } from 'react-native-calendars';
 
 type Asset = {
   id?: number;
   name: string;
   product_id: string;
-  sale_price: number; // 販売価格
-  buy_price: number;  // 買取価格
+  sale_price: number;
+  buy_price: number;
 };
 
 const DashboardScreen = () => {
@@ -20,6 +17,7 @@ const DashboardScreen = () => {
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [memoText, setMemoText] = useState<string>('');
   const isFocused = useIsFocused();
+  const navigation = useNavigation();
 
   useEffect(() => {
     initDB();
@@ -28,6 +26,9 @@ const DashboardScreen = () => {
   useEffect(() => {
     if (isFocused) {
       fetchData();
+      if (selectedDate) {
+        loadMemo(selectedDate);
+      }
     }
   }, [isFocused]);
 
@@ -40,18 +41,20 @@ const DashboardScreen = () => {
     }
   };
 
-  // 集計処理
-  const totalSalePrice = assets.reduce((acc, cur) => acc + (cur.sale_price || 0), 0);
+  const loadMemo = async (date: string) => {
+    try {
+      const memo = await getMemo(date);
+      setMemoText(memo);
+    } catch (error) {
+      console.log(error);
+    }
+  };
 
+  const totalSalePrice = assets.reduce((acc, cur) => acc + (cur.sale_price || 0), 0);
   const realAssets = assets.filter(asset => asset.product_id === '1');
   const financialAssets = assets.filter(asset => asset.product_id === '2');
-
   const realSalePrice = realAssets.reduce((acc, cur) => acc + (cur.sale_price || 0), 0);
   const financialSalePrice = financialAssets.reduce((acc, cur) => acc + (cur.sale_price || 0), 0);
-
-  const realPercentage = totalSalePrice > 0 ? ((realSalePrice / totalSalePrice) * 100).toFixed(2) : '0.00';
-  const financialPercentage = totalSalePrice > 0 ? ((financialSalePrice / totalSalePrice) * 100).toFixed(2) : '0.00';
-
   const highestAsset = assets.reduce((prev, current) => (current.sale_price > (prev?.sale_price || 0) ? current : prev), {} as Asset);
   const highestSalePrice = highestAsset?.sale_price || 0;
   const highestAssetName = highestAsset?.name || 'なし';
@@ -65,24 +68,19 @@ const DashboardScreen = () => {
 
   const onDayPress = async (day: { dateString: string }) => {
     setSelectedDate(day.dateString);
-    const memo = await getMemo(day.dateString);
-    setMemoText(memo);
+    loadMemo(day.dateString);
   };
 
-  const saveMemo = async () => {
+  const navigateToEditMemo = () => {
     if (selectedDate) {
-      try {
-        await insertMemo(selectedDate, memoText);
-        Alert.alert('保存完了', 'メモが保存されました');
-      } catch (error) {
-        Alert.alert('エラー', 'メモの保存に失敗しました');
-      }
+      navigation.navigate('MemoEdit', { date: selectedDate, memo: memoText });
+    } else {
+      Alert.alert('日付未選択', 'まず日付を選択してください。');
     }
   };
 
   return (
     <View style={styles.container}>
-
       <View style={styles.summaryContainer}>
         <Text style={[styles.summaryText, { color: 'green' }]}>
           総合総資産（販売価格）: {totalSalePrice} 円(実物: {realSalePrice} 円｜金融: {financialSalePrice} 円)
@@ -98,19 +96,19 @@ const DashboardScreen = () => {
         onDayPress={onDayPress}
         markedDates={selectedDate ? { [selectedDate]: { selected: true } } : {}}
       />
-      {selectedDate ? (
-  <View style={styles.memoContainer}>
-    <Text style={styles.memoLabel}>メモ ({selectedDate}):</Text>
-    <TextInput
-      style={[styles.memoInput, { height: 200, textAlignVertical: 'top' }]} // 高さを150に設定
-      multiline
-      value={memoText}
-      onChangeText={setMemoText}
-    />
-    <Button title="メモ保存" onPress={saveMemo} />
-  </View>
-) : null}
 
+      {/* 常に表示されるメモエリア */}
+      {selectedDate ? (
+        <View style={styles.memoContainer}>
+          <Text style={styles.memoLabel}>メモ ({selectedDate}):</Text>
+          <TouchableOpacity style={styles.memoDisplay} activeOpacity={1}>
+            <Text style={styles.memoText}>
+              {memoText || 'メモなし'}
+            </Text>
+          </TouchableOpacity>
+          <Button title="メモ編集" onPress={navigateToEditMemo} />
+        </View>
+      ) : null}
     </View>
   );
 };
@@ -123,11 +121,6 @@ const styles = StyleSheet.create({
     padding: 16,
     backgroundColor: '#F7F7F7',
   },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 16,
-  },
   summaryContainer: {
     marginBottom: 16,
   },
@@ -135,17 +128,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 8,
-  },
-  cardItem: {
-    padding: 12,
-    marginVertical: 6,
-    backgroundColor: '#FFF',
-    borderRadius: 8,
-    elevation: 1,
-  },
-  cardPrice: {
-    fontSize: 14,
-    color: '#333',
   },
   memoContainer: {
     marginVertical: 16,
@@ -155,12 +137,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 8,
   },
-  memoInput: {
+  memoDisplay: {
     borderWidth: 1,
     borderColor: '#DDD',
     padding: 8,
     borderRadius: 8,
-    marginBottom: 8,
     backgroundColor: '#FFF',
+    minHeight: 100,
+    justifyContent: 'flex-start',
+  },
+  memoText: {
+    fontSize: 14,
+    color: '#333',
   },
 });
