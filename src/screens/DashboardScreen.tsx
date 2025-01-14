@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Button, Alert, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, Button, Alert, TouchableOpacity, ScrollView } from 'react-native';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { initDB, getAllAssets, getMemo } from '../database/Database';
 import { Calendar } from 'react-native-calendars';
@@ -98,17 +98,17 @@ const DashboardScreen = () => {
       />
 
       {/* 常に表示されるメモエリア */}
-      {selectedDate ? (
-        <View style={styles.memoContainer}>
-          <Text style={styles.memoLabel}>メモ ({selectedDate}):</Text>
-          <TouchableOpacity style={styles.memoDisplay} activeOpacity={1}>
-            <Text style={styles.memoText}>
-              {memoText || 'メモなし'}
-            </Text>
-          </TouchableOpacity>
-          <Button title="メモ編集" onPress={navigateToEditMemo} />
-        </View>
-      ) : null}
+      <View style={styles.memoContainer}>
+        <Text style={styles.memoLabel}>
+          メモ {selectedDate ? `(${selectedDate})` : ''}:
+        </Text>
+        <ScrollView style={styles.memoDisplay}>
+          <Text style={styles.memoText}>
+            {memoText || 'メモなし'}
+          </Text>
+        </ScrollView>
+        <Button title="メモ編集" onPress={navigateToEditMemo} />
+      </View>
     </View>
   );
 };
@@ -131,6 +131,7 @@ const styles = StyleSheet.create({
   },
   memoContainer: {
     marginVertical: 16,
+    height: 250, // 固定高さ
   },
   memoLabel: {
     fontSize: 16,
@@ -143,8 +144,8 @@ const styles = StyleSheet.create({
     padding: 8,
     borderRadius: 8,
     backgroundColor: '#FFF',
-    minHeight: 100,
-    justifyContent: 'flex-start',
+    flex: 1,
+    marginBottom: 8,
   },
   memoText: {
     fontSize: 14,
