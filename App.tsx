@@ -14,7 +14,11 @@ const Tab = createBottomTabNavigator();
 export default function App() {
   return (
     <NavigationContainer>
-      <Tab.Navigator>
+      <Tab.Navigator
+        screenOptions={{
+          headerShown: false,  // これで上部ヘッダーを非表示にします
+        }}
+      >
         <Tab.Screen
           name="Dashboard"
           component={DashboardScreen}

@@ -58,8 +58,16 @@ export const initDB = () => {
         trade_profit REAL
       );`
     );
+    // memosテーブルの作成
+    tx.executeSql(
+      `CREATE TABLE IF NOT EXISTS memos (
+        date TEXT PRIMARY KEY,
+        memo TEXT
+      );`
+    );
   });
 };
+
 
 /**
  * 全データ取得
@@ -217,6 +225,44 @@ export const deleteAsset = (id: number): Promise<void> => {
         'DELETE FROM assets WHERE id = ?',
         [id],
         () => resolve(),
+        (_, error) => {
+          reject(error);
+          return false;
+        }
+      );
+    });
+  });
+};
+
+export const insertMemo = (date: string, memo: string): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    db.transaction(tx => {
+      tx.executeSql(
+        `REPLACE INTO memos (date, memo) VALUES (?, ?);`,
+        [date, memo],
+        () => resolve(),
+        (_, error) => {
+          reject(error);
+          return false;
+        }
+      );
+    });
+  });
+};
+
+export const getMemo = (date: string): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    db.transaction(tx => {
+      tx.executeSql(
+        `SELECT memo FROM memos WHERE date = ?;`,
+        [date],
+        (_, result) => {
+          if (result.rows.length > 0) {
+            resolve(result.rows.item(0).memo);
+          } else {
+            resolve('');
+          }
+        },
         (_, error) => {
           reject(error);
           return false;
