@@ -15,7 +15,8 @@ import {
   Modal,
   Button,
   ScrollView,
-  ActivityIndicator, // ローディングインジケータ
+  ActivityIndicator,
+  Linking, // ← 追加：外部URLを開くため
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useIsFocused } from '@react-navigation/native';
@@ -27,6 +28,9 @@ import {
   deleteAsset,
 } from '../database/Database';
 
+/**
+ * データ型
+ */
 type Asset = {
   id?: number; // 内部ID（ユーザーには非表示）
   product_id: string;  // 商品ID
@@ -50,32 +54,68 @@ const categoryOptions = ['カード', '家具', 'PC備品', '不動産', '金融
 const conditionOptions = ['状態S', '状態A', '状態B', '状態C'];
 
 /**
- * 商品名を元に相場(販売価格,買取価格)を取得するダミー関数。
- * 
- * 実際には下記のような流れになります:
- *   - fetch('https://example.com/api/getPrice?keyword=xxx')
- *   - レスポンスをJSON化
- *   - そこから sale_price, buy_price を取り出す
+ * Amazon から相場(販売価格,買取価格)を取得するダミー関数。
+ * 実際には Amazon Product Advertising API などを用いて、
+ * 商品名(キーワード)で検索 → 最良の結果から価格を取得...などの処理が必要。
  */
-async function fetchMarketPriceByName(name: string) {
+async function fetchMarketPriceFromAmazon(name: string) {
   if (!name) {
     throw new Error('商品名が空です');
   }
-  
-  // ★ダミー実装★
-  // 例えば実際には下記のような形：
-  // const response = await fetch(`https://example.com/api/price?keyword=${encodeURIComponent(name)}`);
-  // const json = await response.json();
-  // return { sale_price: json.sale, buy_price: json.buy };
-
-  // ここでは単に乱数で相場を返す例
+  // ここでは単に乱数で返すダミー
   return new Promise<{ sale_price: number; buy_price: number }>((resolve) => {
     setTimeout(() => {
       const randomSale = Math.floor(Math.random() * 5000) + 1000; // 1000~6000
-      const randomBuy = Math.floor(randomSale * 0.5);            // 買取は販売価格の半分くらい
+      const randomBuy = Math.floor(randomSale * 0.6);            // 例: 買取は販売価格の6割
       resolve({ sale_price: randomSale, buy_price: randomBuy });
-    }, 1000); // 1秒後に返す
+    }, 1000);
   });
+}
+
+/**
+ * 「相場検索」ボタン押下で、メルカリやヤフオク、価格.com、Amazon を検索する例。
+ * シンプルに Alert でサイトを選ばせるか、または複数同時に開くなど用途に応じて調整。
+ */
+function openSearchSitesByName(name: string) {
+  if (!name) {
+    Alert.alert('エラー', '商品名が空です。');
+    return;
+  }
+  Alert.alert('サイトを選択', 'どのサイトで検索しますか？', [
+    {
+      text: 'メルカリ',
+      onPress: () => {
+        Linking.openURL(
+          'https://www.mercari.com/jp/search/?keyword=' + encodeURIComponent(name)
+        );
+      },
+    },
+    {
+      text: 'ヤフオク',
+      onPress: () => {
+        Linking.openURL(
+          'https://auctions.yahoo.co.jp/search/search?p=' + encodeURIComponent(name)
+        );
+      },
+    },
+    {
+      text: '価格.com',
+      onPress: () => {
+        Linking.openURL(
+          'https://kakaku.com/search_results/' + encodeURIComponent(name) + '/'
+        );
+      },
+    },
+    {
+      text: 'Amazon',
+      onPress: () => {
+        Linking.openURL(
+          'https://www.amazon.co.jp/s?k=' + encodeURIComponent(name)
+        );
+      },
+    },
+    { text: 'キャンセル', style: 'cancel' },
+  ]);
 }
 
 const MyAssetScreen = () => {
@@ -89,7 +129,7 @@ const MyAssetScreen = () => {
     product_id: '',
     name: '',
     category: categoryOptions[0],
-    condition: conditionOptions[1], // 状態A
+    condition: conditionOptions[1],
     sale_price: 0,
     buy_price: 0,
     purchase_date: '',
@@ -102,12 +142,12 @@ const MyAssetScreen = () => {
     sold_commission: 0,
     trade_profit: 0,
   });
-  const [loadingNewPrice, setLoadingNewPrice] = useState(false); // 相場取得中のローディング
+  const [loadingNewPrice, setLoadingNewPrice] = useState(false);
 
   // --- 詳細モーダル ---
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [detailForm, setDetailForm] = useState<Asset | null>(null);
-  const [loadingDetailPrice, setLoadingDetailPrice] = useState(false); // 相場取得中のローディング
+  const [loadingDetailPrice, setLoadingDetailPrice] = useState(false);
 
   // DB 初期化(1回) 
   useEffect(() => {
@@ -134,7 +174,7 @@ const MyAssetScreen = () => {
   // 新規登録フォーム操作
   // ---------------------------------------------
   const handleNewFormChange = (key: keyof Asset, value: string | number) => {
-    const numericFields: (keyof Asset)[] = ['sale_price','buy_price','quantity'];
+    const numericFields: (keyof Asset)[] = ['sale_price', 'buy_price', 'quantity'];
     setNewForm(prev => ({
       ...prev,
       [key]: numericFields.includes(key) ? Number(value) : value,
@@ -173,7 +213,7 @@ const MyAssetScreen = () => {
     }
   };
 
-  /** 新規登録モーダル → 商品名から相場取得 */
+  /** 新規登録モーダル → 商品名から相場取得(=Amazon) */
   const handleFetchNewPrice = async () => {
     if (!newForm.name) {
       Alert.alert('エラー', '商品名を入力してください');
@@ -181,7 +221,7 @@ const MyAssetScreen = () => {
     }
     try {
       setLoadingNewPrice(true);
-      const result = await fetchMarketPriceByName(newForm.name);
+      const result = await fetchMarketPriceFromAmazon(newForm.name);
       // 取得結果をフォームに反映
       setNewForm(prev => ({
         ...prev,
@@ -212,7 +252,7 @@ const MyAssetScreen = () => {
       'sold_price','sold_commission','trade_profit',
     ];
     setDetailForm(prev => {
-      if (!prev) return prev;
+      if (!prev) return null;
       return {
         ...prev,
         [key]: numericFields.includes(key) ? Number(value) : value,
@@ -235,7 +275,7 @@ const MyAssetScreen = () => {
     }
   };
 
-  /** 詳細モーダル → 商品名から相場取得 */
+  /** 詳細モーダル → 商品名から相場取得(=Amazon) */
   const handleFetchDetailPrice = async () => {
     if (!detailForm?.name) {
       Alert.alert('エラー', '商品名を入力してください');
@@ -243,7 +283,7 @@ const MyAssetScreen = () => {
     }
     try {
       setLoadingDetailPrice(true);
-      const result = await fetchMarketPriceByName(detailForm.name);
+      const result = await fetchMarketPriceFromAmazon(detailForm.name);
       setDetailForm(prev => (prev ? {
         ...prev,
         sale_price: result.sale_price,
@@ -435,49 +475,57 @@ const MyAssetScreen = () => {
             </Picker>
           </View>
 
+          {/* 相場取得ボタン(↑Amazon) と 相場検索ボタン(→メルカリ等サイト) を横並び */}
+          <View style={styles.row}>
+            <Button
+              title="相場を取得" 
+              onPress={handleFetchNewPrice}
+            />
+            <View style={{ width: 10 }} />
+            <Button
+              title="相場検索"
+              onPress={() => openSearchSitesByName(newForm.name)}
+            />
+            {loadingNewPrice && <ActivityIndicator style={{ marginLeft: 8 }} />}
+          </View>
+
+          <Text style={[styles.label, { marginTop: 10 }]}>販売価格 (数字)</Text>
           <TextInput
             style={styles.modalInput}
-            placeholder="販売価格 (数字)"
             keyboardType="numeric"
             value={String(newForm.sale_price || '')}
             onChangeText={text => handleNewFormChange('sale_price', text)}
           />
 
+          <Text style={styles.label}>買取価格 (数字)</Text>
           <TextInput
             style={styles.modalInput}
-            placeholder="買取価格 (数字)"
             keyboardType="numeric"
             value={String(newForm.buy_price || '')}
             onChangeText={text => handleNewFormChange('buy_price', text)}
           />
 
+          <Text style={styles.label}>購入日 (例: 2025-01-01)</Text>
           <TextInput
             style={styles.modalInput}
-            placeholder="購入日 (例: 2025-01-01)"
             value={newForm.purchase_date}
             onChangeText={text => handleNewFormChange('purchase_date', text)}
           />
 
+          <Text style={styles.label}>所持枚数 (数字)</Text>
           <TextInput
             style={styles.modalInput}
-            placeholder="所持枚数 (数字)"
             keyboardType="numeric"
             value={String(newForm.quantity || '')}
             onChangeText={text => handleNewFormChange('quantity', text)}
           />
 
+          <Text style={styles.label}>メモ (任意)</Text>
           <TextInput
             style={styles.modalInput}
-            placeholder="メモ (任意)"
             value={newForm.memo}
             onChangeText={text => handleNewFormChange('memo', text)}
           />
-
-          {/* 相場取得ボタン + ローディング表示 */}
-          <View style={styles.row}>
-            <Button title="相場を取得" onPress={handleFetchNewPrice} />
-            {loadingNewPrice && <ActivityIndicator style={{ marginLeft: 8 }} />}
-          </View>
 
           <View style={[styles.buttonRow, { marginTop: 20 }]}>
             <Button title="登録" onPress={handleAdd} />
@@ -540,7 +588,21 @@ const MyAssetScreen = () => {
               </Picker>
             </View>
 
-            <Text style={styles.label}>販売価格</Text>
+            {/* 相場取得ボタン(↑Amazon) と 相場検索ボタン(→メルカリ等) を横並び */}
+            <View style={styles.row}>
+              <Button
+                title="相場を取得" 
+                onPress={handleFetchDetailPrice}
+              />
+              <View style={{ width: 10 }} />
+              <Button
+                title="相場検索"
+                onPress={() => openSearchSitesByName(detailForm.name)}
+              />
+              {loadingDetailPrice && <ActivityIndicator style={{ marginLeft: 8 }} />}
+            </View>
+
+            <Text style={[styles.label, { marginTop: 10 }]}>販売価格</Text>
             <TextInput
               style={styles.modalInput}
               keyboardType="numeric"
@@ -628,12 +690,6 @@ const MyAssetScreen = () => {
               value={String(detailForm.estimated_flag || '')}
               onChangeText={v => handleDetailFormChange('estimated_flag', v)}
             />
-
-            {/* 相場取得ボタン + ローディング表示 */}
-            <View style={styles.row}>
-              <Button title="相場を取得" onPress={handleFetchDetailPrice} />
-              {loadingDetailPrice && <ActivityIndicator style={{ marginLeft: 8 }} />}
-            </View>
 
             <View style={[styles.buttonRow, { marginTop: 20 }]}>
               <Button title="更新" onPress={handleUpdate} />
@@ -760,6 +816,11 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     overflow: 'hidden',
   },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
   divider: {
     height: 1,
     backgroundColor: '#CCC',
@@ -770,14 +831,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 8,
   },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
   buttonRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     marginBottom: 20,
   },
-  // ActivityIndicator はデフォルトスタイルのまま
 });
