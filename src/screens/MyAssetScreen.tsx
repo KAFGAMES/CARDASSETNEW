@@ -16,7 +16,7 @@ import {
   Button,
   ScrollView,
   ActivityIndicator,
-  Linking, // ← 追加：外部URLを開くため
+  Linking,
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useIsFocused } from '@react-navigation/native';
@@ -27,55 +27,49 @@ import {
   updateAsset,
   deleteAsset,
 } from '../database/Database';
+import { RAKUTEN_APP_ID } from '../config';  // 追加: アプリIDのインポート
 
-/**
- * データ型
- */
 type Asset = {
-  id?: number; // 内部ID（ユーザーには非表示）
-  product_id: string;  // 商品ID
-  name: string;        // 名称
-  category: string;    // カテゴリー
-  condition: string;   // 状態
-  sale_price: number;  // 販売価格
-  buy_price: number;   // 買取価格
-  purchase_date: string;  
-  selling_date: string;    // 売却日 (詳細のみ)
-  quantity: number;        // 所持枚数
-  estimated_flag: number;  // 査定済みフラグ (詳細のみ)
-  memo: string;            // メモ
-  cost_price: number;      // 仕入価格(詳細のみ)
-  sold_price: number;      // 売却価格(詳細のみ)
-  sold_commission: number; // 売却手数料(詳細のみ)
-  trade_profit: number;    // 売買利益(詳細のみ)
+  id?: number;
+  product_id: string;
+  name: string;
+  category: string;
+  condition: string;
+  sale_price: number;
+  buy_price: number;
+  purchase_date: string;
+  selling_date: string;
+  quantity: number;
+  estimated_flag: number;
+  memo: string;
+  cost_price: number;
+  sold_price: number;
+  sold_commission: number;
+  trade_profit: number;
 };
 
 const categoryOptions = ['カード', '家具', 'PC備品', '不動産', '金融商品'];
 const conditionOptions = ['状態S', '状態A', '状態B', '状態C'];
 
 /**
- * Amazon から相場(販売価格,買取価格)を取得するダミー関数。
- * 実際には Amazon Product Advertising API などを用いて、
- * 商品名(キーワード)で検索 → 最良の結果から価格を取得...などの処理が必要。
+ * 楽天市場APIを使用して商品名から相場(販売価格)を取得する関数。
  */
-async function fetchMarketPriceFromAmazon(name: string) {
-  if (!name) {
-    throw new Error('商品名が空です');
+async function fetchMarketPriceFromRakuten(name: string) {
+  if (!name) throw new Error('商品名が空です');
+  const appId = RAKUTEN_APP_ID; // 外部設定ファイルから取得
+  const endpoint = 'https://app.rakuten.co.jp/services/api/IchibaItem/Search/20170706';
+  const url = `${endpoint}?applicationId=${appId}&keyword=${encodeURIComponent(name)}&format=json`;
+  
+  const response = await fetch(url);
+  const json = await response.json();
+  
+  if (json.Items && json.Items.length > 0) {
+    const item = json.Items[0].Item;
+    return { sale_price: item.itemPrice || 0, buy_price: 0 };
   }
-  // ここでは単に乱数で返すダミー
-  return new Promise<{ sale_price: number; buy_price: number }>((resolve) => {
-    setTimeout(() => {
-      const randomSale = Math.floor(Math.random() * 5000) + 1000; // 1000~6000
-      const randomBuy = Math.floor(randomSale * 0.6);            // 例: 買取は販売価格の6割
-      resolve({ sale_price: randomSale, buy_price: randomBuy });
-    }, 1000);
-  });
+  throw new Error('商品が見つかりませんでした');
 }
 
-/**
- * 「相場検索」ボタン押下で、メルカリやヤフオク、価格.com、Amazon を検索する例。
- * シンプルに Alert でサイトを選ばせるか、または複数同時に開くなど用途に応じて調整。
- */
 function openSearchSitesByName(name: string) {
   if (!name) {
     Alert.alert('エラー', '商品名が空です。');
@@ -85,35 +79,27 @@ function openSearchSitesByName(name: string) {
     {
       text: 'メルカリ',
       onPress: () => {
-        Linking.openURL(
-          'https://www.mercari.com/jp/search/?keyword=' + encodeURIComponent(name)
-        );
+        Linking.openURL('https://www.mercari.com/jp/search/?keyword=' + encodeURIComponent(name));
       },
     },
     {
       text: 'ヤフオク',
       onPress: () => {
-        Linking.openURL(
-          'https://auctions.yahoo.co.jp/search/search?p=' + encodeURIComponent(name)
-        );
+        Linking.openURL('https://auctions.yahoo.co.jp/search/search?p=' + encodeURIComponent(name));
       },
     },
-    {
-      text: '価格.com',
-      onPress: () => {
-        Linking.openURL(
-          'https://kakaku.com/search_results/' + encodeURIComponent(name) + '/'
-        );
-      },
-    },
-    {
-      text: 'Amazon',
-      onPress: () => {
-        Linking.openURL(
-          'https://www.amazon.co.jp/s?k=' + encodeURIComponent(name)
-        );
-      },
-    },
+    //{
+    //  text: '価格.com',
+     // onPress: () => {
+     //   Linking.openURL('https://kakaku.com/search_results/' + encodeURIComponent(name) + '/');
+     // },
+    //},
+    //{
+    //  text: 'Amazon',
+    // onPress: () => {
+    //    Linking.openURL('https://www.amazon.co.jp/s?k=' + encodeURIComponent(name));
+    //  },
+    //},
     { text: 'キャンセル', style: 'cancel' },
   ]);
 }
@@ -123,7 +109,6 @@ const MyAssetScreen = () => {
   const [searchText, setSearchText] = useState('');
   const isFocused = useIsFocused();
 
-  // --- 新規登録モーダル ---
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [newForm, setNewForm] = useState<Asset>({
     product_id: '',
@@ -144,22 +129,12 @@ const MyAssetScreen = () => {
   });
   const [loadingNewPrice, setLoadingNewPrice] = useState(false);
 
-  // --- 詳細モーダル ---
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [detailForm, setDetailForm] = useState<Asset | null>(null);
   const [loadingDetailPrice, setLoadingDetailPrice] = useState(false);
 
-  // DB 初期化(1回) 
-  useEffect(() => {
-    initDB();
-  }, []);
-
-  // フォーカス時にデータ取得
-  useEffect(() => {
-    if (isFocused) {
-      fetchData();
-    }
-  }, [isFocused]);
+  useEffect(() => { initDB(); }, []);
+  useEffect(() => { if (isFocused) fetchData(); }, [isFocused]);
 
   const fetchData = async () => {
     try {
@@ -170,9 +145,6 @@ const MyAssetScreen = () => {
     }
   };
 
-  // ---------------------------------------------
-  // 新規登録フォーム操作
-  // ---------------------------------------------
   const handleNewFormChange = (key: keyof Asset, value: string | number) => {
     const numericFields: (keyof Asset)[] = ['sale_price', 'buy_price', 'quantity'];
     setNewForm(prev => ({
@@ -191,7 +163,6 @@ const MyAssetScreen = () => {
       console.log(error);
       Alert.alert('エラー', '登録に失敗しました。');
     } finally {
-      // フォームリセット
       setNewForm({
         product_id: '',
         name: '',
@@ -213,7 +184,6 @@ const MyAssetScreen = () => {
     }
   };
 
-  /** 新規登録モーダル → 商品名から相場取得(=Amazon) */
   const handleFetchNewPrice = async () => {
     if (!newForm.name) {
       Alert.alert('エラー', '商品名を入力してください');
@@ -221,14 +191,13 @@ const MyAssetScreen = () => {
     }
     try {
       setLoadingNewPrice(true);
-      const result = await fetchMarketPriceFromAmazon(newForm.name);
-      // 取得結果をフォームに反映
+      const result = await fetchMarketPriceFromRakuten(newForm.name);
       setNewForm(prev => ({
         ...prev,
         sale_price: result.sale_price,
         buy_price: result.buy_price,
       }));
-      Alert.alert('取得成功', `販売価格:${result.sale_price} / 買取価格:${result.buy_price}`);
+      Alert.alert('取得成功', `販売価格:${result.sale_price} 円`);
     } catch (error) {
       console.log(error);
       Alert.alert('エラー', '相場の取得に失敗しました。');
@@ -237,9 +206,6 @@ const MyAssetScreen = () => {
     }
   };
 
-  // ---------------------------------------------
-  // 詳細フォーム操作
-  // ---------------------------------------------
   const openDetail = (asset: Asset) => {
     setDetailForm({ ...asset });
     setDetailModalVisible(true);
@@ -275,7 +241,6 @@ const MyAssetScreen = () => {
     }
   };
 
-  /** 詳細モーダル → 商品名から相場取得(=Amazon) */
   const handleFetchDetailPrice = async () => {
     if (!detailForm?.name) {
       Alert.alert('エラー', '商品名を入力してください');
@@ -283,13 +248,13 @@ const MyAssetScreen = () => {
     }
     try {
       setLoadingDetailPrice(true);
-      const result = await fetchMarketPriceFromAmazon(detailForm.name);
+      const result = await fetchMarketPriceFromRakuten(detailForm.name);
       setDetailForm(prev => (prev ? {
         ...prev,
         sale_price: result.sale_price,
         buy_price: result.buy_price,
       } : null));
-      Alert.alert('取得成功', `販売価格:${result.sale_price} / 買取価格:${result.buy_price}`);
+      Alert.alert('取得成功', `販売価格:${result.sale_price} 円`);
     } catch (error) {
       console.log(error);
       Alert.alert('エラー', '相場の取得に失敗しました。');
@@ -298,9 +263,6 @@ const MyAssetScreen = () => {
     }
   };
 
-  // ---------------------------------------------
-  // 削除
-  // ---------------------------------------------
   const handleDelete = async (id?: number) => {
     if (!id) return;
     Alert.alert('削除確認', '本当に削除しますか？', [
@@ -322,102 +284,47 @@ const MyAssetScreen = () => {
     ]);
   };
 
-  // ---------------------------------------------
-  // ソート＆フィルター
-  // ---------------------------------------------
-  const sortedAssets = useMemo(() => {
-    return [...assets].sort((a, b) => b.sale_price - a.sale_price);
-  }, [assets]);
-
+  const sortedAssets = useMemo(() => [...assets].sort((a, b) => b.sale_price - a.sale_price), [assets]);
   const filteredAssets = useMemo(() => {
     if (!searchText) return sortedAssets;
     const lowerSearch = searchText.toLowerCase();
-    return sortedAssets.filter(({ name, category, condition }) => {
-      return (
-        name.toLowerCase().includes(lowerSearch) ||
-        category.toLowerCase().includes(lowerSearch) ||
-        condition.toLowerCase().includes(lowerSearch)
-      );
-    });
+    return sortedAssets.filter(({ name, category, condition }) =>
+      name.toLowerCase().includes(lowerSearch) ||
+      category.toLowerCase().includes(lowerSearch) ||
+      condition.toLowerCase().includes(lowerSearch)
+    );
   }, [searchText, sortedAssets]);
-
-  const highestSalePrice = filteredAssets.length
-    ? filteredAssets[0].sale_price
-    : 0;
+  const highestSalePrice = filteredAssets.length ? filteredAssets[0].sale_price : 0;
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Text style={styles.title}>マイ資産一覧</Text>
-
-      {/* 検索欄 */}
-      <TextInput
-        style={styles.searchInput}
-        placeholder="名称・カテゴリ・状態を検索"
-        value={searchText}
-        onChangeText={setSearchText}
-      />
-
-      {/* 新規登録ボタン */}
-      <TouchableOpacity
-        style={styles.addButton}
-        onPress={() => setAddModalVisible(true)}
-      >
+      <TextInput style={styles.searchInput} placeholder="名称・カテゴリ・状態を検索" value={searchText} onChangeText={setSearchText} />
+      <TouchableOpacity style={styles.addButton} onPress={() => setAddModalVisible(true)}>
         <Text style={styles.addButtonText}>+ 新規登録</Text>
       </TouchableOpacity>
-
-      {/* 資産一覧 */}
       <FlatList
         data={filteredAssets}
         keyExtractor={(_, index) => String(index)}
         renderItem={({ item }) => {
           const isHighlight = item.sale_price === highestSalePrice && highestSalePrice > 0;
           return (
-            <View
-              style={[styles.assetItem, isHighlight && styles.highlightItem]}
-            >
+            <View style={[styles.assetItem, isHighlight && styles.highlightItem]}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.assetName}>
-                  {item.name} (商品ID: {item.product_id})
-                </Text>
-                <Text style={styles.assetText}>
-                  カテゴリ: {item.category}
-                </Text>
-                <Text style={styles.assetText}>
-                  状態: {item.condition}
-                </Text>
-                <Text style={styles.assetText}>
-                  販売価格: {item.sale_price} 円
-                </Text>
-                <Text style={styles.assetText}>
-                  買取価格: {item.buy_price} 円
-                </Text>
-                <Text style={styles.assetText}>
-                  所持枚数: {item.quantity}
-                </Text>
-                <Text style={styles.assetText}>
-                  購入日: {item.purchase_date || '-'}
-                </Text>
-                <Text style={styles.assetText}>
-                  メモ: {item.memo || '-'}
-                </Text>
+                <Text style={styles.assetName}>{item.name} (商品ID: {item.product_id})</Text>
+                <Text style={styles.assetText}>カテゴリ: {item.category}</Text>
+                <Text style={styles.assetText}>状態: {item.condition}</Text>
+                <Text style={styles.assetText}>販売価格: {item.sale_price} 円</Text>
+                <Text style={styles.assetText}>買取価格: {item.buy_price} 円</Text>
+                <Text style={styles.assetText}>所持枚数: {item.quantity}</Text>
+                <Text style={styles.assetText}>購入日: {item.purchase_date || '-'}</Text>
+                <Text style={styles.assetText}>メモ: {item.memo || '-'}</Text>
               </View>
-
-              {/* 右側ボタン群 */}
               <View style={styles.buttonColumn}>
-                <TouchableOpacity
-                  style={styles.detailButton}
-                  onPress={() => openDetail(item)}
-                >
+                <TouchableOpacity style={styles.detailButton} onPress={() => openDetail(item)}>
                   <Text style={styles.detailButtonText}>詳細</Text>
                 </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.deleteButton}
-                  onPress={() => handleDelete(item.id)}
-                >
+                <TouchableOpacity style={styles.deleteButton} onPress={() => handleDelete(item.id)}>
                   <Text style={styles.deleteButtonText}>削除</Text>
                 </TouchableOpacity>
               </View>
@@ -425,279 +332,98 @@ const MyAssetScreen = () => {
           );
         }}
       />
-
-      {/* ------------------------------------------------ */}
-      {/* 新規登録モーダル */}
-      {/* ------------------------------------------------ */}
-      <Modal
-        visible={addModalVisible}
-        animationType="slide"
-        onRequestClose={() => setAddModalVisible(false)}
-      >
+      <Modal visible={addModalVisible} animationType="slide" onRequestClose={() => setAddModalVisible(false)}>
         <ScrollView style={styles.modalContainer}>
           <Text style={styles.modalTitle}>新規資産を登録</Text>
-
-          <TextInput
-            style={styles.modalInput}
-            placeholder="商品ID (例: CARD001)"
-            value={newForm.product_id}
-            onChangeText={text => handleNewFormChange('product_id', text)}
-          />
-
-          <TextInput
-            style={styles.modalInput}
-            placeholder="名称 (例: レアカード)"
-            value={newForm.name}
-            onChangeText={text => handleNewFormChange('name', text)}
-          />
-
+          <TextInput style={styles.modalInput} placeholder="商品ID (例: CARD001)" value={newForm.product_id} onChangeText={text => handleNewFormChange('product_id', text)} />
+          <TextInput style={styles.modalInput} placeholder="名称 (例: レアカード)" value={newForm.name} onChangeText={text => handleNewFormChange('name', text)} />
           <Text style={styles.label}>カテゴリー</Text>
           <View style={styles.pickerWrapper}>
-            <Picker
-              selectedValue={newForm.category}
-              onValueChange={value => handleNewFormChange('category', value)}
-            >
-              {categoryOptions.map(opt => (
-                <Picker.Item label={opt} value={opt} key={opt} />
-              ))}
+            <Picker selectedValue={newForm.category} onValueChange={value => handleNewFormChange('category', value)}>
+              {categoryOptions.map(opt => <Picker.Item label={opt} value={opt} key={opt} />)}
             </Picker>
           </View>
-
           <Text style={styles.label}>状態</Text>
           <View style={styles.pickerWrapper}>
-            <Picker
-              selectedValue={newForm.condition}
-              onValueChange={value => handleNewFormChange('condition', value)}
-            >
-              {conditionOptions.map(opt => (
-                <Picker.Item label={opt} value={opt} key={opt} />
-              ))}
+            <Picker selectedValue={newForm.condition} onValueChange={value => handleNewFormChange('condition', value)}>
+              {conditionOptions.map(opt => <Picker.Item label={opt} value={opt} key={opt} />)}
             </Picker>
           </View>
-
-          {/* 相場取得ボタン(↑Amazon) と 相場検索ボタン(→メルカリ等サイト) を横並び */}
           <View style={styles.row}>
-            <Button
-              title="相場を取得" 
-              onPress={handleFetchNewPrice}
-            />
+            <Button title="販売相場を取得" onPress={handleFetchNewPrice} />
             <View style={{ width: 10 }} />
-            <Button
-              title="相場検索"
-              onPress={() => openSearchSitesByName(newForm.name)}
-            />
+            <Button title="買取相場の検索" onPress={() => openSearchSitesByName(newForm.name)} />
             {loadingNewPrice && <ActivityIndicator style={{ marginLeft: 8 }} />}
           </View>
-
           <Text style={[styles.label, { marginTop: 10 }]}>販売価格 (数字)</Text>
-          <TextInput
-            style={styles.modalInput}
-            keyboardType="numeric"
-            value={String(newForm.sale_price || '')}
-            onChangeText={text => handleNewFormChange('sale_price', text)}
-          />
-
+          <TextInput style={styles.modalInput} keyboardType="numeric" value={String(newForm.sale_price || '')} onChangeText={text => handleNewFormChange('sale_price', text)} />
           <Text style={styles.label}>買取価格 (数字)</Text>
-          <TextInput
-            style={styles.modalInput}
-            keyboardType="numeric"
-            value={String(newForm.buy_price || '')}
-            onChangeText={text => handleNewFormChange('buy_price', text)}
-          />
-
+          <TextInput style={styles.modalInput} keyboardType="numeric" value={String(newForm.buy_price || '')} onChangeText={text => handleNewFormChange('buy_price', text)} />
           <Text style={styles.label}>購入日 (例: 2025-01-01)</Text>
-          <TextInput
-            style={styles.modalInput}
-            value={newForm.purchase_date}
-            onChangeText={text => handleNewFormChange('purchase_date', text)}
-          />
-
+          <TextInput style={styles.modalInput} value={newForm.purchase_date} onChangeText={text => handleNewFormChange('purchase_date', text)} />
           <Text style={styles.label}>所持枚数 (数字)</Text>
-          <TextInput
-            style={styles.modalInput}
-            keyboardType="numeric"
-            value={String(newForm.quantity || '')}
-            onChangeText={text => handleNewFormChange('quantity', text)}
-          />
-
+          <TextInput style={styles.modalInput} keyboardType="numeric" value={String(newForm.quantity || '')} onChangeText={text => handleNewFormChange('quantity', text)} />
           <Text style={styles.label}>メモ (任意)</Text>
-          <TextInput
-            style={styles.modalInput}
-            value={newForm.memo}
-            onChangeText={text => handleNewFormChange('memo', text)}
-          />
-
+          <TextInput style={styles.modalInput} value={newForm.memo} onChangeText={text => handleNewFormChange('memo', text)} />
           <View style={[styles.buttonRow, { marginTop: 20 }]}>
             <Button title="登録" onPress={handleAdd} />
-            <Button
-              title="キャンセル"
-              onPress={() => setAddModalVisible(false)}
-              color="#999"
-            />
+            <Button title="キャンセル" onPress={() => setAddModalVisible(false)} color="#999" />
           </View>
         </ScrollView>
       </Modal>
-
-      {/* ------------------------------------------------ */}
-      {/* 詳細モーダル */}
-      {/* ------------------------------------------------ */}
-      <Modal
-        visible={detailModalVisible}
-        animationType="slide"
-        onRequestClose={() => setDetailModalVisible(false)}
-      >
+      <Modal visible={detailModalVisible} animationType="slide" onRequestClose={() => setDetailModalVisible(false)}>
         {detailForm && (
           <ScrollView style={styles.modalContainer}>
             <Text style={styles.modalTitle}>詳細情報</Text>
-
             <Text style={styles.label}>商品ID</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={detailForm.product_id}
-              onChangeText={v => handleDetailFormChange('product_id', v)}
-            />
-
+            <TextInput style={styles.modalInput} value={detailForm.product_id} onChangeText={v => handleDetailFormChange('product_id', v)} />
             <Text style={styles.label}>名称</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={detailForm.name}
-              onChangeText={v => handleDetailFormChange('name', v)}
-            />
-
+            <TextInput style={styles.modalInput} value={detailForm.name} onChangeText={v => handleDetailFormChange('name', v)} />
             <Text style={styles.label}>カテゴリー</Text>
             <View style={styles.pickerWrapper}>
-              <Picker
-                selectedValue={detailForm.category}
-                onValueChange={v => handleDetailFormChange('category', v)}
-              >
-                {categoryOptions.map(opt => (
-                  <Picker.Item label={opt} value={opt} key={opt} />
-                ))}
+              <Picker selectedValue={detailForm.category} onValueChange={v => handleDetailFormChange('category', v)}>
+                {categoryOptions.map(opt => <Picker.Item label={opt} value={opt} key={opt} />)}
               </Picker>
             </View>
-
             <Text style={styles.label}>状態</Text>
             <View style={styles.pickerWrapper}>
-              <Picker
-                selectedValue={detailForm.condition}
-                onValueChange={v => handleDetailFormChange('condition', v)}
-              >
-                {conditionOptions.map(opt => (
-                  <Picker.Item label={opt} value={opt} key={opt} />
-                ))}
+              <Picker selectedValue={detailForm.condition} onValueChange={v => handleDetailFormChange('condition', v)}>
+                {conditionOptions.map(opt => <Picker.Item label={opt} value={opt} key={opt} />)}
               </Picker>
             </View>
-
-            {/* 相場取得ボタン(↑Amazon) と 相場検索ボタン(→メルカリ等) を横並び */}
             <View style={styles.row}>
-              <Button
-                title="相場を取得" 
-                onPress={handleFetchDetailPrice}
-              />
+              <Button title="販売相場を取得" onPress={handleFetchDetailPrice} />
               <View style={{ width: 10 }} />
-              <Button
-                title="相場検索"
-                onPress={() => openSearchSitesByName(detailForm.name)}
-              />
+              <Button title="買取相場の検索" onPress={() => openSearchSitesByName(detailForm.name)} />
               {loadingDetailPrice && <ActivityIndicator style={{ marginLeft: 8 }} />}
             </View>
-
             <Text style={[styles.label, { marginTop: 10 }]}>販売価格</Text>
-            <TextInput
-              style={styles.modalInput}
-              keyboardType="numeric"
-              value={String(detailForm.sale_price || '')}
-              onChangeText={v => handleDetailFormChange('sale_price', v)}
-            />
-
+            <TextInput style={styles.modalInput} keyboardType="numeric" value={String(detailForm.sale_price || '')} onChangeText={v => handleDetailFormChange('sale_price', v)} />
             <Text style={styles.label}>買取価格</Text>
-            <TextInput
-              style={styles.modalInput}
-              keyboardType="numeric"
-              value={String(detailForm.buy_price || '')}
-              onChangeText={v => handleDetailFormChange('buy_price', v)}
-            />
-
+            <TextInput style={styles.modalInput} keyboardType="numeric" value={String(detailForm.buy_price || '')} onChangeText={v => handleDetailFormChange('buy_price', v)} />
             <Text style={styles.label}>購入日</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={detailForm.purchase_date}
-              onChangeText={v => handleDetailFormChange('purchase_date', v)}
-            />
-
+            <TextInput style={styles.modalInput} value={detailForm.purchase_date} onChangeText={v => handleDetailFormChange('purchase_date', v)} />
             <Text style={styles.label}>所持枚数</Text>
-            <TextInput
-              style={styles.modalInput}
-              keyboardType="numeric"
-              value={String(detailForm.quantity || '')}
-              onChangeText={v => handleDetailFormChange('quantity', v)}
-            />
-
+            <TextInput style={styles.modalInput} keyboardType="numeric" value={String(detailForm.quantity || '')} onChangeText={v => handleDetailFormChange('quantity', v)} />
             <Text style={styles.label}>メモ</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={detailForm.memo}
-              onChangeText={v => handleDetailFormChange('memo', v)}
-            />
-
-            {/* 売却関連 */}
+            <TextInput style={styles.modalInput} value={detailForm.memo} onChangeText={v => handleDetailFormChange('memo', v)} />
             <View style={styles.divider} />
             <Text style={styles.subTitle}>売却関連</Text>
-
             <Text style={styles.label}>売却日</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={detailForm.selling_date}
-              onChangeText={v => handleDetailFormChange('selling_date', v)}
-            />
-
+            <TextInput style={styles.modalInput} value={detailForm.selling_date} onChangeText={v => handleDetailFormChange('selling_date', v)} />
             <Text style={styles.label}>仕入価格</Text>
-            <TextInput
-              style={styles.modalInput}
-              keyboardType="numeric"
-              value={String(detailForm.cost_price || '')}
-              onChangeText={v => handleDetailFormChange('cost_price', v)}
-            />
-
+            <TextInput style={styles.modalInput} keyboardType="numeric" value={String(detailForm.cost_price || '')} onChangeText={v => handleDetailFormChange('cost_price', v)} />
             <Text style={styles.label}>売却価格</Text>
-            <TextInput
-              style={styles.modalInput}
-              keyboardType="numeric"
-              value={String(detailForm.sold_price || '')}
-              onChangeText={v => handleDetailFormChange('sold_price', v)}
-            />
-
+            <TextInput style={styles.modalInput} keyboardType="numeric" value={String(detailForm.sold_price || '')} onChangeText={v => handleDetailFormChange('sold_price', v)} />
             <Text style={styles.label}>売却手数料</Text>
-            <TextInput
-              style={styles.modalInput}
-              keyboardType="numeric"
-              value={String(detailForm.sold_commission || '')}
-              onChangeText={v => handleDetailFormChange('sold_commission', v)}
-            />
-
+            <TextInput style={styles.modalInput} keyboardType="numeric" value={String(detailForm.sold_commission || '')} onChangeText={v => handleDetailFormChange('sold_commission', v)} />
             <Text style={styles.label}>売買利益</Text>
-            <TextInput
-              style={styles.modalInput}
-              keyboardType="numeric"
-              value={String(detailForm.trade_profit || '')}
-              onChangeText={v => handleDetailFormChange('trade_profit', v)}
-            />
-
+            <TextInput style={styles.modalInput} keyboardType="numeric" value={String(detailForm.trade_profit || '')} onChangeText={v => handleDetailFormChange('trade_profit', v)} />
             <Text style={styles.label}>査定済みフラグ (0 or 1)</Text>
-            <TextInput
-              style={styles.modalInput}
-              keyboardType="numeric"
-              value={String(detailForm.estimated_flag || '')}
-              onChangeText={v => handleDetailFormChange('estimated_flag', v)}
-            />
-
+            <TextInput style={styles.modalInput} keyboardType="numeric" value={String(detailForm.estimated_flag || '')} onChangeText={v => handleDetailFormChange('estimated_flag', v)} />
             <View style={[styles.buttonRow, { marginTop: 20 }]}>
               <Button title="更新" onPress={handleUpdate} />
-              <Button
-                title="閉じる"
-                onPress={() => setDetailModalVisible(false)}
-                color="#999"
-              />
+              <Button title="閉じる" onPress={() => setDetailModalVisible(false)} color="#999" />
             </View>
           </ScrollView>
         )}
@@ -709,131 +435,27 @@ const MyAssetScreen = () => {
 export default MyAssetScreen;
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F7F7F7',
-    padding: 16,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 16,
-  },
-  searchInput: {
-    backgroundColor: '#FFF',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    marginBottom: 16,
-    fontSize: 16,
-  },
-  addButton: {
-    backgroundColor: 'green',
-    padding: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  addButtonText: {
-    color: '#FFF',
-    fontSize: 16,
-  },
-  assetItem: {
-    flexDirection: 'row',
-    padding: 12,
-    marginBottom: 8,
-    backgroundColor: '#FFF',
-    borderRadius: 8,
-    elevation: 1,
-  },
-  highlightItem: {
-    borderWidth: 2,
-    borderColor: 'orange',
-  },
-  assetName: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  assetText: {
-    fontSize: 14,
-    color: '#333',
-    marginTop: 2,
-  },
-  buttonColumn: {
-    justifyContent: 'space-around',
-    marginLeft: 10,
-  },
-  detailButton: {
-    backgroundColor: '#00AACC',
-    padding: 8,
-    borderRadius: 8,
-    marginBottom: 8,
-    width: 60,
-    alignItems: 'center',
-  },
-  detailButtonText: {
-    color: '#FFF',
-    fontWeight: '600',
-  },
-  deleteButton: {
-    backgroundColor: '#CC0033',
-    padding: 8,
-    borderRadius: 8,
-    width: 60,
-    alignItems: 'center',
-  },
-  deleteButtonText: {
-    color: '#FFF',
-    fontWeight: '600',
-  },
-  modalContainer: {
-    flex: 1,
-    backgroundColor: '#FFF',
-    padding: 16,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 12,
-    alignSelf: 'center',
-  },
-  modalInput: {
-    borderWidth: 1,
-    borderColor: '#DDD',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 8,
-    marginBottom: 10,
-  },
-  label: {
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  pickerWrapper: {
-    borderWidth: 1,
-    borderColor: '#DDD',
-    borderRadius: 8,
-    marginBottom: 10,
-    overflow: 'hidden',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#CCC',
-    marginVertical: 12,
-  },
-  subTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 20,
-  },
+  container: { flex: 1, backgroundColor: '#F7F7F7', padding: 16 },
+  title: { fontSize: 20, fontWeight: 'bold', marginBottom: 16 },
+  searchInput: { backgroundColor: '#FFF', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, marginBottom: 16, fontSize: 16 },
+  addButton: { backgroundColor: 'green', padding: 10, borderRadius: 8, alignItems: 'center', marginBottom: 12 },
+  addButtonText: { color: '#FFF', fontSize: 16 },
+  assetItem: { flexDirection: 'row', padding: 12, marginBottom: 8, backgroundColor: '#FFF', borderRadius: 8, elevation: 1 },
+  highlightItem: { borderWidth: 2, borderColor: 'orange' },
+  assetName: { fontSize: 16, fontWeight: '700' },
+  assetText: { fontSize: 14, color: '#333', marginTop: 2 },
+  buttonColumn: { justifyContent: 'space-around', marginLeft: 10 },
+  detailButton: { backgroundColor: '#00AACC', padding: 8, borderRadius: 8, marginBottom: 8, width: 60, alignItems: 'center' },
+  detailButtonText: { color: '#FFF', fontWeight: '600' },
+  deleteButton: { backgroundColor: '#CC0033', padding: 8, borderRadius: 8, width: 60, alignItems: 'center' },
+  deleteButtonText: { color: '#FFF', fontWeight: '600' },
+  modalContainer: { flex: 1, backgroundColor: '#FFF', padding: 16 },
+  modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 12, alignSelf: 'center' },
+  modalInput: { borderWidth: 1, borderColor: '#DDD', paddingHorizontal: 8, paddingVertical: 6, borderRadius: 8, marginBottom: 10 },
+  label: { fontWeight: '600', marginBottom: 4 },
+  pickerWrapper: { borderWidth: 1, borderColor: '#DDD', borderRadius: 8, marginBottom: 10, overflow: 'hidden' },
+  row: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  divider: { height: 1, backgroundColor: '#CCC', marginVertical: 12 },
+  subTitle: { fontSize: 16, fontWeight: '600', marginBottom: 8 },
+  buttonRow: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 20 },
 });

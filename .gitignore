@@ -1,7 +1,7 @@
 # OSX
 #
 .DS_Store
-
+src/config.ts
 # Xcode
 #
 build/
