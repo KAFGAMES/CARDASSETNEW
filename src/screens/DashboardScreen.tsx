@@ -12,6 +12,7 @@ type Asset = {
   buy_price: number;
   selling_date?: string;
   trade_profit?: number;
+  quantity?: number;  // quantityを追加
 };
 
 const DashboardScreen = () => {
@@ -141,17 +142,39 @@ const DashboardScreen = () => {
     setCalendarMarks(marks);
   };
 
-  const totalSalePrice = assets.reduce((acc, cur) => acc + (cur.sale_price || 0), 0);
-  const realSalePrice = assets.filter(a => a.product_id === '1').reduce((acc, cur) => acc + (cur.sale_price || 0), 0);
-  const financialSalePrice = assets.filter(a => a.product_id === '2').reduce((acc, cur) => acc + (cur.sale_price || 0), 0);
-  const highestAsset = assets.reduce((prev, current) => (current.sale_price > (prev?.sale_price || 0) ? current : prev), {} as Asset);
-  const highestSalePrice = highestAsset?.sale_price || 0;
+  // 価格×個数で総資産を計算
+  const totalSalePrice = assets.reduce((acc, cur) => {
+    const price = cur.sale_price || 0;
+    const quantity = cur.quantity || 1;
+    return acc + (price * quantity);
+  }, 0);
+
+  const realSalePrice = assets
+    .filter(a => a.product_id === '1')
+    .reduce((acc, cur) => {
+      const price = cur.sale_price || 0;
+      const quantity = cur.quantity || 1;
+      return acc + (price * quantity);
+    }, 0);
+
+  const financialSalePrice = assets
+    .filter(a => a.product_id === '2')
+    .reduce((acc, cur) => {
+      const price = cur.sale_price || 0;
+      const quantity = cur.quantity || 1;
+      return acc + (price * quantity);
+    }, 0);
+
+  const highestAsset = assets.reduce((prev, current) => 
+    (current.sale_price * (current.quantity || 1) > (prev?.sale_price * (prev?.quantity || 1) || 0) ? current : prev), {} as Asset);
+
+  const highestSalePrice = highestAsset?.sale_price ? highestAsset.sale_price * (highestAsset.quantity || 1) : 0;
   const highestAssetName = highestAsset?.name || 'なし';
 
   const showBuyPriceDetails = () => {
-    const totalBuyPrice = assets.reduce((acc, cur) => acc + (cur.buy_price || 0), 0);
+    const totalBuyPrice = assets.reduce((acc, cur) => acc + ((cur.buy_price || 0) * (cur.quantity || 1)), 0);
     const details = `合計買取価格: ${totalBuyPrice} 円\n` +
-      assets.map(asset => `${asset.name}: ${asset.buy_price} 円`).join('\n');
+      assets.map(asset => `${asset.name}: ${(asset.buy_price || 0) * (asset.quantity || 1)} 円`).join('\n');
     Alert.alert('買取価格詳細', details || 'データなし');
   };
 
@@ -205,12 +228,12 @@ const DashboardScreen = () => {
         markingType={'multi-dot'}
         monthFormat={'yyyy年 M月'}
         theme={{
-          backgroundColor: '#001f3f',            // 深い青
-          calendarBackground: '#003366',        // 青基調
+          backgroundColor: '#001f3f',            
+          calendarBackground: '#003366',        
           textSectionTitleColor: '#39FF14',
           dayTextColor: '#FFFFFF',
           todayTextColor: '#FF4500',
-          selectedDayBackgroundColor: '#004080', // 選択日の背景色
+          selectedDayBackgroundColor: '#004080', 
           selectedDayTextColor: '#FFFFFF',
           dotColor: '#39FF14',
           selectedDotColor: '#FFFFFF',
@@ -273,8 +296,8 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   memoContainer: {
-    minHeight: 250,
-    maxHeight: 250,
+    minHeight: 220,
+    maxHeight: 220,
     backgroundColor: '#003366',  // 青い背景
     borderRadius: 12,
     marginBottom: 16,
@@ -306,5 +329,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#39FF14',
     lineHeight: 20,
+  },
+  loadingBanner: {
+    backgroundColor: '#FFF3CD',
+    padding: 10,
+    marginBottom: 10,
+    pointerEvents: 'none',
+  },
+  loadingText: {
+    color: '#856404',
+    textAlign: 'center',
   },
 });
