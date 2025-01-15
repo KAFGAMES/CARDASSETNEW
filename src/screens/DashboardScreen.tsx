@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Button, Alert, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Button, Alert, ScrollView } from 'react-native';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
-import { initDB, getAllAssets, getMemo } from '../database/Database';
+import { initDB, getAllAssets, getMemo, getAllMemos } from '../database/Database';
 import { Calendar } from 'react-native-calendars';
 
 type Asset = {
@@ -10,15 +10,17 @@ type Asset = {
   product_id: string;
   sale_price: number;
   buy_price: number;
-  selling_date?: string;    // 売却日
-  trade_profit?: number;    // 売買利益
+  selling_date?: string;
+  trade_profit?: number;
 };
 
 const DashboardScreen = () => {
+  const today = new Date().toISOString().split('T')[0];
   const [assets, setAssets] = useState<Asset[]>([]);
-  const [selectedDate, setSelectedDate] = useState<string>('');
+  const [selectedDate, setSelectedDate] = useState<string>(today);
   const [memoText, setMemoText] = useState<string>('');
   const [profitStats, setProfitStats] = useState({ yearly: 0, monthly: 0, daily: 0 });
+  const [calendarMarks, setCalendarMarks] = useState({});
   const isFocused = useIsFocused();
   const navigation = useNavigation();
 
@@ -40,6 +42,12 @@ const DashboardScreen = () => {
       computeProfitStats();
     }
   }, [selectedDate, assets]);
+
+  useEffect(() => {
+    if (assets.length > 0) {
+      computeCalendarMarks();
+    }
+  }, [assets]);
 
   const fetchData = async () => {
     try {
@@ -88,11 +96,54 @@ const DashboardScreen = () => {
     setProfitStats({ yearly, monthly, daily });
   };
 
+  const computeCalendarMarks = async () => {
+    const profitByDate: { [key: string]: number } = {};
+    assets.forEach(asset => {
+      if (asset.selling_date) {
+        profitByDate[asset.selling_date] = (profitByDate[asset.selling_date] || 0) + (asset.trade_profit || 0);
+      }
+    });
+
+    let memos: { date: string; memo: string }[] = [];
+    try {
+      memos = await getAllMemos();
+    } catch (error) {
+      console.log(error);
+    }
+
+    const memoDates: { [key: string]: boolean } = {};
+    memos.forEach(({ date, memo }) => {
+      if (memo.trim() !== '') {
+        memoDates[date] = true;
+      }
+    });
+
+    const marks: { [key: string]: any } = {};
+    Object.keys(profitByDate).forEach(date => {
+      const dots = [];
+      if (profitByDate[date] > 0) {
+        dots.push({ key: 'profit', color: '#39FF14' }); // ネオングリーン
+      } else if (profitByDate[date] < 0) {
+        dots.push({ key: 'loss', color: '#FF3131' }); // 鮮やかな赤
+      }
+      if (memoDates[date]) {
+        dots.push({ key: 'memo', color: '#000' }); // メモありの場合は黒
+      }
+      marks[date] = { dots };
+    });
+
+    Object.keys(memoDates).forEach(date => {
+      if (!marks[date]) {
+        marks[date] = { dots: [{ key: 'memo', color: '#000' }] };
+      }
+    });
+
+    setCalendarMarks(marks);
+  };
+
   const totalSalePrice = assets.reduce((acc, cur) => acc + (cur.sale_price || 0), 0);
-  const realAssets = assets.filter(asset => asset.product_id === '1');
-  const financialAssets = assets.filter(asset => asset.product_id === '2');
-  const realSalePrice = realAssets.reduce((acc, cur) => acc + (cur.sale_price || 0), 0);
-  const financialSalePrice = financialAssets.reduce((acc, cur) => acc + (cur.sale_price || 0), 0);
+  const realSalePrice = assets.filter(a => a.product_id === '1').reduce((acc, cur) => acc + (cur.sale_price || 0), 0);
+  const financialSalePrice = assets.filter(a => a.product_id === '2').reduce((acc, cur) => acc + (cur.sale_price || 0), 0);
   const highestAsset = assets.reduce((prev, current) => (current.sale_price > (prev?.sale_price || 0) ? current : prev), {} as Asset);
   const highestSalePrice = highestAsset?.sale_price || 0;
   const highestAssetName = highestAsset?.name || 'なし';
@@ -117,36 +168,64 @@ const DashboardScreen = () => {
     }
   };
 
+  const markedDates = {
+    ...calendarMarks,
+    ...(selectedDate && {
+      [selectedDate]: {
+        ...(calendarMarks[selectedDate] || {}),
+        selected: true,
+        selectedColor: '#004080', // 青基調の選択日背景
+      },
+    }),
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.summaryContainer}>
-        <Text style={[styles.summaryText, { color: 'green' }]}>
+        <Text style={[styles.summaryText, { color: '#39FF14' }]}>
           総合総資産（販売価格）: {totalSalePrice} 円(実物: {realSalePrice} 円｜金融: {financialSalePrice} 円)
         </Text>
-        <Text style={[styles.summaryText, { color: 'orange' }]}>
+        <Text style={[styles.summaryText, { color: '#FFD700' }]}>
           資産ハイライト: {highestAssetName} : {highestSalePrice} 円
         </Text>
       </View>
 
-      
+      <View style={styles.profitContainer}>
+        <Text style={styles.profitText}>
+          年間損益: {profitStats.yearly} 円｜月間損益: {profitStats.monthly} 円｜日時損益: {profitStats.daily} 円
+        </Text>
+      </View>
 
-      <Button title="買取価格詳細を見る" onPress={showBuyPriceDetails} />
+      <Button title="買取価格詳細を見る" onPress={showBuyPriceDetails} color="#1E90FF" />
 
       <Calendar
+        current={selectedDate}
         onDayPress={onDayPress}
-        markedDates={selectedDate ? { [selectedDate]: { selected: true } } : {}}
+        markedDates={markedDates}
+        markingType={'multi-dot'}
+        monthFormat={'yyyy年 M月'}
+        theme={{
+          backgroundColor: '#001f3f',            // 深い青
+          calendarBackground: '#003366',        // 青基調
+          textSectionTitleColor: '#39FF14',
+          dayTextColor: '#FFFFFF',
+          todayTextColor: '#FF4500',
+          selectedDayBackgroundColor: '#004080', // 選択日の背景色
+          selectedDayTextColor: '#FFFFFF',
+          dotColor: '#39FF14',
+          selectedDotColor: '#FFFFFF',
+          arrowColor: '#39FF14',
+          monthTextColor: '#FFFFFF',
+          indicatorColor: '#39FF14',
+          textDayFontWeight: '300',
+          textMonthFontWeight: 'bold',
+          textDayHeaderFontWeight: '300',
+          textDayFontSize: 16,
+          textMonthFontSize: 18,
+          textDayHeaderFontSize: 14,
+        }}
       />
 
-      {/* 売買損益の表示 */}
-      {/*{selectedDate ? (*/}
-        <View style={styles.profitContainer}>
-          <Text style={styles.profitText}>
-          年間損益: {profitStats.yearly} 円｜月間損益: {profitStats.monthly} 円｜日時損益: {profitStats.daily} 円
-          </Text>
-        </View>
-      {/*) : null}*/}
-
-      {/* 常に表示されるメモエリア */}
       <View style={styles.memoContainer}>
         <Text style={styles.memoLabel}>
           メモ {selectedDate ? `(${selectedDate})` : ''}:
@@ -156,7 +235,7 @@ const DashboardScreen = () => {
             {memoText || 'メモなし'}
           </Text>
         </ScrollView>
-        <Button title="メモ編集" onPress={navigateToEditMemo} />
+        <Button title="メモ編集" onPress={navigateToEditMemo} color="#FF1493" />
       </View>
     </View>
   );
@@ -168,7 +247,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 16,
-    backgroundColor: '#F7F7F7',
+    backgroundColor: '#001f3f', // 青基調の背景色
   },
   summaryContainer: {
     marginBottom: 16,
@@ -177,37 +256,55 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 8,
+    textShadowColor: '#39FF14',  // ネオン風テキストシャドウ
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
   },
   profitContainer: {
-    marginBottom: 0,
-    padding: 3,
-    backgroundColor: '#eef',
+    marginBottom: 16,
+    padding: 10,
+    backgroundColor: '#003366',  // 青い背景
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#39FF14',
   },
   profitText: {
     fontSize: 14,
-    marginBottom: 4,
+    color: '#FFFFFF',
   },
   memoContainer: {
-    marginVertical: 3,
-    height: 250,
+    minHeight: 250,
+    maxHeight: 250,
+    backgroundColor: '#003366',  // 青い背景
+    borderRadius: 12,
+    marginBottom: 16,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#39FF14',
   },
   memoLabel: {
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 8,
+    color: '#FFD700',
+    textShadowColor: '#FFD700',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 5,
   },
   memoDisplay: {
     borderWidth: 1,
-    borderColor: '#DDD',
+    borderColor: '#333',
     padding: 8,
     borderRadius: 8,
-    backgroundColor: '#FFF',
+    backgroundColor: '#000',
     flex: 1,
+    flexGrow: 1,
     marginBottom: 8,
   },
   memoText: {
     fontSize: 14,
-    color: '#333',
+    color: '#39FF14',
+    lineHeight: 20,
   },
 });

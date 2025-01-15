@@ -271,3 +271,22 @@ export const getMemo = (date: string): Promise<string> => {
     });
   });
 };
+
+export const getAllMemos = (): Promise<{date: string, memo: string}[]> => {
+  return new Promise((resolve, reject) => {
+    db.transaction(tx => {
+      tx.executeSql(
+        'SELECT * FROM memos',
+        [],
+        (_, result) => {
+          resolve(result.rows.raw());
+        },
+        (_, error) => {
+          reject(error);
+          return false;
+        }
+      );
+    });
+  });
+};
+

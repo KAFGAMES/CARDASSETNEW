@@ -22,9 +22,10 @@ const MemoEditScreen = () => {
   const saveAndGoBack = async () => {
     try {
       await insertMemo(date, memoText);
-      Alert.alert('保存完了', 'メモが保存されました', [
-        { text: 'OK', onPress: () => navigation.goBack() }
-      ]);
+      //Alert.alert('保存完了', 'メモが保存されました', [
+      //  { text: 'OK', onPress: () => navigation.goBack() }
+      //]);
+      navigation.goBack();
     } catch (error) {
       Alert.alert('エラー', 'メモの保存に失敗しました');
     }

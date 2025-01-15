@@ -354,7 +354,6 @@ const FinancialAssetScreen = () => {
         data={filteredAssets}
         keyExtractor={(_, index) => String(index)}
         renderItem={({ item }) => {
-          //const isHighlight = item.sale_price === highestSalePrice && highestSalePrice > 0;
           return (
             <View style={[styles.assetItem, styles.highlightItem]}>
               <View style={{ flex: 1 }}>
@@ -484,29 +483,177 @@ const FinancialAssetScreen = () => {
 export default FinancialAssetScreen;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F7F7F7', padding: 16 },
-  title: { fontSize: 20, fontWeight: 'bold', marginBottom: 16 },
-  searchInput: { backgroundColor: '#FFF', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, marginBottom: 16, fontSize: 16 },
-  addButton: { backgroundColor: 'green', padding: 10, borderRadius: 8, alignItems: 'center', marginBottom: 12 },
-  addButtonText: { color: '#FFF', fontSize: 16 },
-  assetItem: { flexDirection: 'row', padding: 12, marginBottom: 8, backgroundColor: '#FFF', borderRadius: 8, elevation: 1 },
-  highlightItem: { borderWidth: 2, borderColor: 'orange' },
-  assetName: { fontSize: 16, fontWeight: '700' },
-  assetText: { fontSize: 14, color: '#333', marginTop: 2 },
-  buttonColumn: { justifyContent: 'space-around', marginLeft: 10 },
-  detailButton: { backgroundColor: '#00AACC', padding: 8, borderRadius: 8, marginBottom: 8, width: 60, alignItems: 'center' },
-  detailButtonText: { color: '#FFF', fontWeight: '600' },
-  deleteButton: { backgroundColor: '#CC0033', padding: 8, borderRadius: 8, width: 60, alignItems: 'center' },
-  deleteButtonText: { color: '#FFF', fontWeight: '600' },
-  modalContainer: { flex: 1, backgroundColor: '#FFF', padding: 16 },
-  modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 12, alignSelf: 'center' },
-  modalInput: { borderWidth: 1, borderColor: '#DDD', paddingHorizontal: 8, paddingVertical: 6, borderRadius: 8, marginBottom: 10 },
-  label: { fontWeight: '600', marginBottom: 4 },
-  pickerWrapper: { borderWidth: 1, borderColor: '#DDD', borderRadius: 8, marginBottom: 10, overflow: 'hidden' },
-  row: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  divider: { height: 1, backgroundColor: '#CCC', marginVertical: 12 },
-  subTitle: { fontSize: 16, fontWeight: '600', marginBottom: 8 },
-  buttonRow: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 20 },
-  filterRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
-  pickerSmall: { flex: 1, height: 50 },
+  container: { 
+    flex: 1, 
+    backgroundColor: '#2e1c0b', // 深い赤みを帯びた黄色基調の背景
+    padding: 16 
+  },
+  title: { 
+    fontSize: 20, 
+    fontWeight: 'bold', 
+    marginBottom: 16,
+    color: '#FFD700',
+    textShadowColor: '#B22222', // 赤みの影
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
+  },
+  searchInput: { 
+    backgroundColor: '#3b2a1a', 
+    paddingHorizontal: 12, 
+    paddingVertical: 8, 
+    borderRadius: 8, 
+    marginBottom: 16, 
+    fontSize: 16,
+    color: '#FFD700'
+  },
+  addButton: { 
+    backgroundColor: '#B8860B', 
+    padding: 10, 
+    borderRadius: 8, 
+    alignItems: 'center', 
+    marginBottom: 12,
+    shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 0 },
+    shadowRadius: 10,
+    shadowOpacity: 0.9,
+  },
+  addButtonText: { 
+    color: '#2e1c0b', 
+    fontSize: 16, 
+    fontWeight: 'bold' 
+  },
+  assetItem: { 
+    flexDirection: 'row', 
+    padding: 12, 
+    marginBottom: 8, 
+    backgroundColor: '#3b2a1a', 
+    borderRadius: 8, 
+    elevation: 1,
+    shadowColor: '#B22222',
+    shadowOffset: { width: 0, height: 0 },
+    shadowRadius: 5,
+    shadowOpacity: 0.8,
+  },
+  highlightItem: { 
+    borderWidth: 2, 
+    borderColor: '#FFD700' 
+  },
+  assetName: { 
+    fontSize: 16, 
+    fontWeight: '700',
+    color: '#FFD700',
+    textShadowColor: '#B22222',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 5,
+  },
+  assetText: { 
+    fontSize: 14, 
+    color: '#EEE', 
+    marginTop: 2 
+  },
+  buttonColumn: { 
+    justifyContent: 'space-around', 
+    marginLeft: 10 
+  },
+  detailButton: { 
+    backgroundColor: '#8B0000', 
+    padding: 8, 
+    borderRadius: 8, 
+    marginBottom: 8, 
+    width: 60, 
+    alignItems: 'center',
+    shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 0 },
+    shadowRadius: 5,
+    shadowOpacity: 0.8,
+  },
+  detailButtonText: { 
+    color: '#FFF', 
+    fontWeight: '600' 
+  },
+  deleteButton: { 
+    backgroundColor: '#4B0000', 
+    padding: 8, 
+    borderRadius: 8, 
+    width: 60, 
+    alignItems: 'center',
+    shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 0 },
+    shadowRadius: 5,
+    shadowOpacity: 0.8,
+  },
+  deleteButtonText: { 
+    color: '#FFF', 
+    fontWeight: '600' 
+  },
+  modalContainer: { 
+    flex: 1, 
+    backgroundColor: '#3b2a1a', 
+    padding: 16 
+  },
+  modalTitle: { 
+    fontSize: 18, 
+    fontWeight: 'bold', 
+    marginBottom: 12, 
+    alignSelf: 'center',
+    color: '#FFD700',
+    textShadowColor: '#B22222',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 5,
+  },
+  modalInput: { 
+    borderWidth: 1, 
+    borderColor: '#DDD', 
+    paddingHorizontal: 8, 
+    paddingVertical: 6, 
+    borderRadius: 8, 
+    marginBottom: 10,
+    backgroundColor: '#2e1c0b',
+    color: '#FFD700'
+  },
+  label: { 
+    fontWeight: '600', 
+    marginBottom: 4,
+    color: '#FFD700'
+  },
+  pickerWrapper: { 
+    borderWidth: 1, 
+    borderColor: '#DDD', 
+    borderRadius: 8, 
+    marginBottom: 10, 
+    overflow: 'hidden',
+    backgroundColor: '#2e1c0b'
+  },
+  row: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    marginBottom: 4 
+  },
+  divider: { 
+    height: 1, 
+    backgroundColor: '#CCC', 
+    marginVertical: 12 
+  },
+  subTitle: { 
+    fontSize: 16, 
+    fontWeight: '600', 
+    marginBottom: 8,
+    color: '#FFD700'
+  },
+  buttonRow: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-around', 
+    marginBottom: 20 
+  },
+  filterRow: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    marginBottom: 10 
+  },
+  pickerSmall: { 
+    flex: 1, 
+    height: 50,
+    color: '#FFD700',
+    backgroundColor: '#2e1c0b'
+  },
 });
