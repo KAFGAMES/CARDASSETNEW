@@ -17,27 +17,10 @@ const db: SQLiteDatabase = SQLite.openDatabase(
 
 /**
  * DB初期化用関数。
- * 下記項目でテーブルを作成します。
- *
- * - id (PRIMARY KEY AUTOINCREMENT)
- * - product_id (商品ID)
- * - name (名称)
- * - category (カテゴリー)
- * - condition (状態)
- * - sale_price (販売価格)
- * - buy_price (買取価格)
- * - purchase_date (購入日)
- * - selling_date (売却日)
- * - quantity (所持枚数)
- * - estimated_flag (査定済みフラグ)
- * - memo (メモ)
- * - cost_price (仕入価格)
- * - sold_price (売却価格)
- * - sold_commission (売却手数料)
- * - trade_profit (売買利益)
  */
 export const initDB = () => {
   db.transaction(tx => {
+    // メインの資産テーブル
     tx.executeSql(
       `CREATE TABLE IF NOT EXISTS assets (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -58,7 +41,23 @@ export const initDB = () => {
         trade_profit REAL
       );`
     );
-    // memosテーブルの作成
+
+    // 取引履歴テーブルを追加
+    tx.executeSql(
+      `CREATE TABLE IF NOT EXISTS asset_transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        asset_id INTEGER,
+        trans_date TEXT,        -- 取引日
+        trans_type TEXT,        -- 'BUY' or 'SELL'
+        quantity INTEGER,       -- 取引数
+        price REAL,             -- 1単位あたりの取引価格
+        commission REAL,        -- 手数料
+        profit REAL,            -- 売却時の損益 (買い増し時は0扱い)
+        memo TEXT
+      );`
+    );
+
+    // memos テーブルの作成(既存)
     tx.executeSql(
       `CREATE TABLE IF NOT EXISTS memos (
         date TEXT PRIMARY KEY,
@@ -67,7 +66,6 @@ export const initDB = () => {
     );
   });
 };
-
 
 /**
  * 全データ取得
@@ -90,8 +88,47 @@ export const getAllAssets = (): Promise<any[]> => {
   });
 };
 
+export const getAllTransactions = (): Promise<any[]> => {
+  return new Promise((resolve, reject) => {
+    db.transaction(tx => {
+      tx.executeSql(
+        'SELECT * FROM asset_transactions',
+        [],
+        (_, result) => {
+          resolve(result.rows.raw());
+        },
+        (_, error) => {
+          reject(error);
+          return false;
+        }
+      );
+    });
+  });
+};
+
 /**
- * 新規登録
+ * 特定資産の取引履歴を取得
+ */
+export const getAssetTransactions = (assetId: number): Promise<any[]> => {
+  return new Promise((resolve, reject) => {
+    db.transaction(tx => {
+      tx.executeSql(
+        'SELECT * FROM asset_transactions WHERE asset_id = ? ORDER BY id DESC',
+        [assetId],
+        (_, result) => {
+          resolve(result.rows.raw());
+        },
+        (_, error) => {
+          reject(error);
+          return false;
+        }
+      );
+    });
+  });
+};
+
+/**
+ * 新規登録 (assets)
  */
 export const insertAsset = (asset: {
   product_id: string;
@@ -116,7 +153,7 @@ export const insertAsset = (asset: {
         `INSERT INTO assets
           (product_id, name, category, condition, sale_price, buy_price, purchase_date, selling_date,
            quantity, estimated_flag, memo, cost_price, sold_price, sold_commission, trade_profit)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
         [
           asset.product_id,
           asset.name,
@@ -145,7 +182,7 @@ export const insertAsset = (asset: {
 };
 
 /**
- * 更新
+ * 更新 (assets)
  */
 export const updateAsset = (
   id: number,
@@ -186,7 +223,7 @@ export const updateAsset = (
           sold_price = ?,
           sold_commission = ?,
           trade_profit = ?
-         WHERE id = ?`,
+         WHERE id = ?;`,
         [
           asset.product_id,
           asset.name,
@@ -224,6 +261,36 @@ export const deleteAsset = (id: number): Promise<void> => {
       tx.executeSql(
         'DELETE FROM assets WHERE id = ?',
         [id],
+        () => resolve(),
+        (_, error) => {
+          reject(error);
+          return false;
+        }
+      );
+    });
+  });
+};
+
+/**
+ * 取引履歴の追加
+ */
+export const insertTransaction = (
+  assetId: number,
+  transDate: string,
+  transType: 'BUY' | 'SELL',
+  quantity: number,
+  price: number,
+  commission: number,
+  profit: number,
+  memo: string
+): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    db.transaction(tx => {
+      tx.executeSql(
+        `INSERT INTO asset_transactions
+          (asset_id, trans_date, trans_type, quantity, price, commission, profit, memo)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
+        [assetId, transDate, transType, quantity, price, commission, profit, memo],
         () => resolve(),
         (_, error) => {
           reject(error);

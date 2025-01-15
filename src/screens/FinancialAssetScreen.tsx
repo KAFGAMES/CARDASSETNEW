@@ -26,6 +26,8 @@ import {
   insertAsset,
   updateAsset,
   deleteAsset,
+  getAssetTransactions,
+  insertTransaction,
 } from '../database/Database';
 import { RAKUTEN_APP_ID } from '../config';
 
@@ -35,17 +37,29 @@ type Asset = {
   name: string;
   category: string;
   condition: string;
-  sale_price: number;
-  buy_price: number;
+  sale_price: number;      // 画面上での「現在の売却想定単価」あるいは自動取得用
+  buy_price: number;       // 画面上での「参考買取単価」あるいは自動取得用
   purchase_date: string;
   selling_date: string;
-  quantity: number;
+  quantity: number;        // 現在の保有数
   estimated_flag: number;
   memo: string;
-  cost_price: number;
-  sold_price: number;
-  sold_commission: number;
-  trade_profit: number;
+  cost_price: number;      // 現在保有している分の総コスト
+  sold_price: number;      // 累計売却金額(任意の使い方が可能)
+  sold_commission: number; // 累計売却手数料(任意の使い方が可能)
+  trade_profit: number;    // 累計売買損益
+};
+
+type Transaction = {
+  id?: number;
+  asset_id: number;
+  trans_date: string;
+  trans_type: 'BUY' | 'SELL';
+  quantity: number;
+  price: number;
+  commission: number;
+  profit: number;
+  memo: string;
 };
 
 const categoryOptions = ['株', '仮想通貨', '債券', '投資信託', 'その他'];
@@ -99,6 +113,7 @@ const FinancialAssetScreen = () => {
   const [filterCategory, setFilterCategory] = useState('');
   const [filterCondition, setFilterCondition] = useState('');
 
+  // 新規登録用モーダル
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [newForm, setNewForm] = useState<Asset>({
     product_id: '2',
@@ -119,16 +134,36 @@ const FinancialAssetScreen = () => {
   });
   const [loadingNewPrice, setLoadingNewPrice] = useState(false);
 
+  // 詳細・更新用モーダル
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [detailForm, setDetailForm] = useState<Asset | null>(null);
   const [loadingDetailPrice, setLoadingDetailPrice] = useState(false);
+
+  // 取引(購入・売却)モーダル
+  const [transactionModalVisible, setTransactionModalVisible] = useState(false);
+  const [transType, setTransType] = useState<'BUY' | 'SELL'>('SELL');
+  const [transDate, setTransDate] = useState('');
+  const [transQuantity, setTransQuantity] = useState('');
+  const [transPrice, setTransPrice] = useState('');
+  const [transCommission, setTransCommission] = useState('');
+  const [transMemo, setTransMemo] = useState('');
+
+  // 取引履歴一覧
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
 
   // 株番号入力モーダル用の状態
   const [stockInputModalVisible, setStockInputModalVisible] = useState(false);
   const [stockNumber, setStockNumber] = useState('');
 
-  useEffect(() => { initDB(); }, []);
-  useEffect(() => { if (isFocused) fetchData(); }, [isFocused]);
+  useEffect(() => {
+    initDB();
+  }, []);
+
+  useEffect(() => {
+    if (isFocused) {
+      fetchData();
+    }
+  }, [isFocused]);
 
   const fetchData = async () => {
     try {
@@ -139,16 +174,19 @@ const FinancialAssetScreen = () => {
     }
   };
 
+  // 新規登録用フォーム更新
   const handleNewFormChange = (key: keyof Asset, value: string | number) => {
-    const numericFields: (keyof Asset)[] = ['sale_price', 'buy_price', 'quantity'];
+    const numericFields: (keyof Asset)[] = ['sale_price', 'buy_price', 'quantity', 'cost_price'];
     setNewForm(prev => ({
       ...prev,
       [key]: numericFields.includes(key) ? Number(value) : value,
     }));
   };
 
+  // 新規登録実行
   const handleAdd = async () => {
     try {
+      // cost_price はユーザー入力をそのまま使用 (自動計算しない)
       await insertAsset(newForm);
       setAddModalVisible(false);
       fetchData();
@@ -157,6 +195,7 @@ const FinancialAssetScreen = () => {
       console.log(error);
       Alert.alert('エラー', '登録に失敗しました。');
     } finally {
+      // フォームリセット
       setNewForm({
         product_id: '2',
         name: '',
@@ -178,6 +217,7 @@ const FinancialAssetScreen = () => {
     }
   };
 
+  // 株番号から株価取得
   const fetchPriceByStockNumber = async (stockNumberInput: string) => {
     try {
       setLoadingNewPrice(true);
@@ -207,15 +247,23 @@ const FinancialAssetScreen = () => {
     }
   };
 
-  const handleFetchNewPriceByNumber = () => {
-    setStockInputModalVisible(true);
-  };
-
-  const openDetail = (asset: Asset) => {
+  // 詳細・更新モーダルを開く
+  const openDetail = async (asset: Asset) => {
     setDetailForm({ ...asset });
     setDetailModalVisible(true);
+
+    // 取引履歴を読み込み
+    if (asset.id) {
+      try {
+        const history = await getAssetTransactions(asset.id);
+        setTransactions(history);
+      } catch (err) {
+        console.log(err);
+      }
+    }
   };
 
+  // 詳細フォーム更新
   const handleDetailFormChange = (key: keyof Asset, value: string | number) => {
     if (!detailForm) return;
     const numericFields: (keyof Asset)[] = [
@@ -231,6 +279,7 @@ const FinancialAssetScreen = () => {
     });
   };
 
+  // 詳細更新実行
   const handleUpdate = async () => {
     if (!detailForm?.id) return;
     try {
@@ -246,6 +295,129 @@ const FinancialAssetScreen = () => {
     }
   };
 
+  // 取引モーダルを開く
+  const handleTransactionOpen = (type: 'BUY' | 'SELL') => {
+    if (!detailForm) return;
+    setTransType(type);
+    setTransDate('');
+    setTransQuantity('');
+    setTransPrice('');
+    setTransCommission('');
+    setTransMemo('');
+    setTransactionModalVisible(true);
+  };
+
+  // 取引実行 (Buy or Sell)
+  const handleTransaction = async () => {
+    if (!detailForm || !detailForm.id) return;
+
+    const assetId = detailForm.id;
+    const date = transDate || new Date().toISOString().slice(0,10); // 未入力なら今日
+    const qty = Number(transQuantity);
+    const price = Number(transPrice);
+    const comm = Number(transCommission);
+
+    if (qty <= 0 || price <= 0) {
+      Alert.alert('エラー', '数量や単価を正しく入力してください。');
+      return;
+    }
+
+    // 単純化のため、(BUY) なら追加購入、(SELL) なら部分売却というロジックを踏襲
+    let newQuantity = detailForm.quantity;
+    let newCostPrice = detailForm.cost_price;
+    let newSoldPrice = detailForm.sold_price;
+    let newSoldCommission = detailForm.sold_commission;
+    let newTradeProfit = detailForm.trade_profit;
+    let newSellingDate = detailForm.selling_date; // 全部売却時に更新する可能性あり
+    let thisProfit = 0;  // 今回の取引による損益
+
+    if (transType === 'BUY') {
+      // 追加購入
+      // 「平均取得単価」の考え方で総コストを加算する例
+      const costForThisBuy = price * qty + comm; 
+      newQuantity = detailForm.quantity + qty;
+      newCostPrice = detailForm.cost_price + costForThisBuy;
+      // 売却損益は増えない
+      thisProfit = 0;
+    } else {
+      // SELL
+      if (qty > detailForm.quantity) {
+        Alert.alert('エラー', '保有数を超える売却はできません。');
+        return;
+      }
+      // 平均取得単価
+      const costPerUnit = detailForm.quantity > 0 
+        ? detailForm.cost_price / detailForm.quantity 
+        : 0;
+      // 今回売却分の原価
+      const costOfThisSale = costPerUnit * qty;
+      // 売却収入
+      const saleAmount = price * qty;
+      // 利益計算
+      thisProfit = saleAmount - costOfThisSale - comm;
+
+      // 保有数・コスト更新
+      newQuantity = detailForm.quantity - qty;
+      newCostPrice = detailForm.cost_price - costOfThisSale;
+
+      // 累計売却金額・手数料
+      newSoldPrice = detailForm.sold_price + saleAmount;
+      newSoldCommission = detailForm.sold_commission + comm;
+
+      // 累計損益
+      newTradeProfit = detailForm.trade_profit + thisProfit;
+
+      // 全部売却したら selling_date を更新
+      if (newQuantity === 0) {
+        newSellingDate = date;
+      }
+    }
+
+    // DB更新
+    const updatedAsset: Asset = {
+      ...detailForm,
+      quantity: newQuantity,
+      cost_price: newCostPrice,
+      sold_price: newSoldPrice,
+      sold_commission: newSoldCommission,
+      trade_profit: newTradeProfit,
+      selling_date: newSellingDate,
+    };
+
+    try {
+      await updateAsset(detailForm.id, updatedAsset);
+      // 取引履歴に追加
+      await insertTransaction(
+        assetId, 
+        date,
+        transType,
+        qty,
+        price,
+        comm,
+        thisProfit,
+        transMemo
+      );
+
+      setDetailForm(updatedAsset);
+
+      // 取引一覧も再読込
+      const history = await getAssetTransactions(assetId);
+      setTransactions(history);
+
+      setTransactionModalVisible(false);
+      fetchData();
+      if (transType === 'BUY') {
+        Alert.alert('購入完了', '追加購入を記録しました。');
+      } else {
+        Alert.alert('売却完了', '部分売却を記録しました。');
+      }
+    } catch (error) {
+      console.log(error);
+      Alert.alert('エラー', '取引処理に失敗しました。');
+    }
+  };
+
+  // 楽天などでの相場取得
   const handleFetchDetailPrice = async () => {
     if (!detailForm?.name) {
       Alert.alert('エラー', '商品名を入力してください');
@@ -267,6 +439,7 @@ const FinancialAssetScreen = () => {
     }
   };
 
+  // 削除
   const handleDelete = async (id?: number) => {
     if (!id) return;
     Alert.alert('削除確認', '本当に削除しますか？', [
@@ -288,6 +461,7 @@ const FinancialAssetScreen = () => {
     ]);
   };
 
+  // 並び替え
   const sortedAssets = useMemo(() => {
     let sorted = [...assets];
     switch(sortOption) {
@@ -309,6 +483,7 @@ const FinancialAssetScreen = () => {
     return sorted;
   }, [assets, sortOption]);
 
+  // フィルタと検索
   const filteredAssets = useMemo(() => {
     return sortedAssets.filter(asset => {
       const lowerSearch = searchText.toLowerCase();
@@ -325,6 +500,7 @@ const FinancialAssetScreen = () => {
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Text style={styles.title}>金融資産一覧</Text>
+      {/* ソート・フィルタ */}
       <View style={styles.filterRow}>
         <Picker
           style={styles.pickerSmall}
@@ -350,15 +526,19 @@ const FinancialAssetScreen = () => {
           {conditionOptions.map(opt => <Picker.Item label={opt} value={opt} key={opt} />)}
         </Picker>
       </View>
+      {/* 検索 */}
       <TextInput
         style={styles.searchInput}
         placeholder="名称・カテゴリ・状態を検索"
         value={searchText}
         onChangeText={setSearchText}
       />
+      {/* 新規登録ボタン */}
       <TouchableOpacity style={styles.addButton} onPress={() => setAddModalVisible(true)}>
         <Text style={styles.addButtonText}>+ 新規登録</Text>
       </TouchableOpacity>
+
+      {/* 一覧 */}
       <FlatList
         data={filteredAssets}
         keyExtractor={(_, index) => String(index)}
@@ -370,8 +550,14 @@ const FinancialAssetScreen = () => {
               <Text style={styles.assetText}>状態: {item.condition}</Text>
               <Text style={styles.assetText}>販売価格: {item.sale_price} 円</Text>
               <Text style={styles.assetText}>買取価格: {item.buy_price} 円</Text>
-              <Text style={styles.assetText}>所持枚数: {item.quantity}</Text>
+              <Text style={styles.assetText}>所持数: {item.quantity}</Text>
+              <Text style={styles.assetText}>平均取得単価: 
+                {item.quantity > 0 ? (item.cost_price / item.quantity).toFixed(2) : '-'}
+                円
+              </Text>
+              <Text style={styles.assetText}>累計売却益: {item.trade_profit} 円</Text>
               <Text style={styles.assetText}>購入日: {item.purchase_date || '-'}</Text>
+              <Text style={styles.assetText}>売却日(全部売却時): {item.selling_date || '-'}</Text>
               <Text style={styles.assetText}>メモ: {item.memo || '-'}</Text>
             </View>
             <View style={styles.buttonColumn}>
@@ -385,6 +571,8 @@ const FinancialAssetScreen = () => {
           </View>
         )}
       />
+
+      {/* -- 新規登録モーダル -- */}
       <Modal visible={addModalVisible} animationType="slide" onRequestClose={() => setAddModalVisible(false)}>
         <ScrollView style={styles.modalContainer}>
           <Text style={styles.modalTitle}>新規資産を登録</Text>
@@ -415,7 +603,7 @@ const FinancialAssetScreen = () => {
           <View style={styles.row}>
             {newForm.category === '株' && (
               <>
-                <Button title="株番号から相場を取得" onPress={handleFetchNewPriceByNumber} />
+                <Button title="株番号から相場を取得" onPress={() => setStockInputModalVisible(true)} />
                 <View style={{ width: 10 }} />
               </>
             )}
@@ -442,12 +630,19 @@ const FinancialAssetScreen = () => {
             value={newForm.purchase_date}
             onChangeText={text => handleNewFormChange('purchase_date', text)}
           />
-          <Text style={[styles.label, { color: 'blue' }]}>所持枚数 (数字)</Text>
+          <Text style={[styles.label, { color: 'blue' }]}>所持数 (数字)</Text>
           <TextInput
             style={[styles.modalInput, { color: 'blue' }]}
             keyboardType="numeric"
             value={String(newForm.quantity || '')}
             onChangeText={text => handleNewFormChange('quantity', text)}
+          />
+          <Text style={[styles.label, { color: 'blue' }]}>総コスト (数字)</Text>
+          <TextInput
+            style={[styles.modalInput, { color: 'blue' }]}
+            keyboardType="numeric"
+            value={String(newForm.cost_price || '')}
+            onChangeText={text => handleNewFormChange('cost_price', text)}
           />
           <Text style={[styles.label, { color: 'blue' }]}>メモ (任意)</Text>
           <TextInput
@@ -462,7 +657,7 @@ const FinancialAssetScreen = () => {
         </ScrollView>
       </Modal>
 
-      {/* 株番号入力モーダル */}
+      {/* -- 株番号入力モーダル -- */}
       <Modal
         visible={stockInputModalVisible}
         transparent
@@ -487,13 +682,169 @@ const FinancialAssetScreen = () => {
         </View>
       </Modal>
 
+      {/* -- 詳細情報モーダル -- */}
       <Modal visible={detailModalVisible} animationType="slide" onRequestClose={() => setDetailModalVisible(false)}>
         {detailForm && (
           <ScrollView style={styles.modalContainer}>
             <Text style={styles.modalTitle}>詳細情報</Text>
-            {/* 以下、詳細情報モーダルの内容 */}
+            <Text style={styles.label}>名称</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={detailForm.name}
+              onChangeText={text => handleDetailFormChange('name', text)}
+            />
+            <Text style={styles.label}>カテゴリ</Text>
+            <View style={styles.pickerWrapper}>
+              <Picker
+                selectedValue={detailForm.category}
+                onValueChange={value => handleDetailFormChange('category', value)}
+              >
+                {categoryOptions.map(opt => <Picker.Item label={opt} value={opt} key={opt} />)}
+              </Picker>
+            </View>
+            <Text style={styles.label}>状態</Text>
+            <View style={styles.pickerWrapper}>
+              <Picker
+                selectedValue={detailForm.condition}
+                onValueChange={value => handleDetailFormChange('condition', value)}
+              >
+                {conditionOptions.map(opt => <Picker.Item label={opt} value={opt} key={opt} />)}
+              </Picker>
+            </View>
+
+            {/* 相場取得ボタン */}
+            <View style={styles.row}>
+              <Button title="楽天相場取得" onPress={handleFetchDetailPrice} />
+              {loadingDetailPrice && <ActivityIndicator style={{ marginLeft: 8 }} />}
+            </View>
+
+            <Text style={styles.label}>販売価格(参考)</Text>
+            <TextInput
+              style={styles.modalInput}
+              keyboardType="numeric"
+              value={String(detailForm.sale_price)}
+              onChangeText={text => handleDetailFormChange('sale_price', text)}
+            />
+            <Text style={styles.label}>購入日</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={detailForm.purchase_date}
+              onChangeText={text => handleDetailFormChange('purchase_date', text)}
+            />
+            <Text style={styles.label}>売却日(全部売却後)</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={detailForm.selling_date}
+              onChangeText={text => handleDetailFormChange('selling_date', text)}
+            />
+            <Text style={styles.label}>保有数</Text>
+            <TextInput
+              style={styles.modalInput}
+              keyboardType="numeric"
+              value={String(detailForm.quantity)}
+              onChangeText={text => handleDetailFormChange('quantity', text)}
+            />
+            <Text style={styles.label}>総コスト</Text>
+            <TextInput
+              style={styles.modalInput}
+              keyboardType="numeric"
+              value={String(detailForm.cost_price)}
+              onChangeText={text => handleDetailFormChange('cost_price', text)}
+            />
+            <Text style={styles.label}>累計売買利益</Text>
+            <TextInput
+              style={styles.modalInput}
+              keyboardType="numeric"
+              value={String(detailForm.trade_profit)}
+              onChangeText={text => handleDetailFormChange('trade_profit', text)}
+            />
+            <Text style={styles.label}>メモ</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={detailForm.memo}
+              onChangeText={text => handleDetailFormChange('memo', text)}
+            />
+
+            <View style={styles.buttonRow}>
+              <Button title="更新" onPress={handleUpdate} />
+              {/* 取引追加 (買い増し or 売却) */}
+              <Button title="追加購入" onPress={() => handleTransactionOpen('BUY')} />
+              <Button title="部分売却" onPress={() => handleTransactionOpen('SELL')} />
+              <Button title="閉じる" onPress={() => setDetailModalVisible(false)} color="#999" />
+            </View>
+
+            {/* 取引履歴一覧を表示 (オプション) */}
+            <Text style={[styles.label, { marginTop: 20 }]}>取引履歴</Text>
+            {transactions.map(tr => (
+              <View key={tr.id} style={{ marginBottom: 6 }}>
+                <Text style={{ color: '#FFD700' }}>
+                  [{tr.trans_type}] {tr.trans_date} / {tr.quantity} @ {tr.price}円
+                  手数料: {tr.commission} / 損益: {tr.profit}
+                </Text>
+              </View>
+            ))}
           </ScrollView>
         )}
+      </Modal>
+
+      {/* -- 取引モーダル (BUY or SELL) -- */}
+      <Modal
+        visible={transactionModalVisible}
+        animationType="slide"
+        onRequestClose={() => setTransactionModalVisible(false)}
+      >
+        <ScrollView style={styles.modalContainer}>
+          <Text style={styles.modalTitle}>{transType === 'BUY' ? '追加購入' : '部分売却'}</Text>
+          <Text style={styles.label}>取引日</Text>
+          <TextInput
+            style={styles.modalInput}
+            placeholder="2025-01-01 など"
+            value={transDate}
+            onChangeText={setTransDate}
+          />
+          <Text style={styles.label}>数量</Text>
+          <TextInput
+            style={styles.modalInput}
+            keyboardType="numeric"
+            placeholder="買い増し/売却する数量"
+            value={transQuantity}
+            onChangeText={setTransQuantity}
+          />
+          <Text style={styles.label}>取引単価</Text>
+          <TextInput
+            style={styles.modalInput}
+            keyboardType="numeric"
+            placeholder="1 株/枚あたりの単価"
+            value={transPrice}
+            onChangeText={setTransPrice}
+          />
+          <Text style={styles.label}>手数料</Text>
+          <TextInput
+            style={styles.modalInput}
+            keyboardType="numeric"
+            placeholder="今回の手数料"
+            value={transCommission}
+            onChangeText={setTransCommission}
+          />
+          <Text style={styles.label}>メモ</Text>
+          <TextInput
+            style={styles.modalInput}
+            placeholder="取引メモ"
+            value={transMemo}
+            onChangeText={setTransMemo}
+          />
+          <View style={styles.buttonRow}>
+            <Button
+              title={transType === 'BUY' ? '購入実行' : '売却実行'}
+              onPress={handleTransaction}
+            />
+            <Button
+              title="キャンセル"
+              onPress={() => setTransactionModalVisible(false)}
+              color="#999"
+            />
+          </View>
+        </ScrollView>
       </Modal>
     </KeyboardAvoidingView>
   );
@@ -628,6 +979,7 @@ const styles = StyleSheet.create({
     borderRadius: 8, 
     marginBottom: 10,
     backgroundColor: '#2e1c0b',
+    color: '#FFD700',
   },
   label: { 
     fontWeight: '600', 
